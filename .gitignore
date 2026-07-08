@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+
+front-end/node_modules/
+front-end/dist/
+front-end/.env
+front-end/*.log
+
+.env
+*.log
