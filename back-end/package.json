@@ -1,0 +1,17 @@
+{
+  "name": "torinnofc-back-end",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/supabaseAdmin.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
