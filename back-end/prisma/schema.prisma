@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Match {
+  id             String    @id @default(uuid()) @db.Uuid
+  homeTeam       String    @map("home_team")
+  awayTeam       String    @map("away_team")
+  matchDate      DateTime  @map("match_date") @db.Date
+  matchTime      DateTime? @map("match_time") @db.Time(6)
+  location       String?
+  championshipId String?   @map("championship_id") @db.Uuid
+  status         String    @default("Agendada")
+  homeScore      Int?      @map("home_score")
+  awayScore      Int?      @map("away_score")
+  createdBy      String?   @map("created_by") @db.Uuid
+  observations   String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("matches")
+}
+
+model Tryout {
+  id           String    @id @default(uuid()) @db.Uuid
+  title        String
+  tryoutDate   DateTime  @map("tryout_date") @db.Date
+  tryoutTime   DateTime? @map("tryout_time") @db.Time(6)
+  location     String?
+  category     String    @default("Geral")
+  requirements String?
+  observations String?
+  status       String    @default("Agendada")
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("tryouts")
+}
+
+model NotificationLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  eventType    String    @map("event_type")
+  entityId     String    @map("entity_id") @db.Uuid
+  channel      String    @default("whatsapp")
+  destination  String
+  status       String    @default("pending")
+  messageBody  String    @map("message_body")
+  apiResponse  Json?     @map("api_response")
+  errorMessage String?   @map("error_message")
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([eventType, entityId, channel, destination])
+  @@index([eventType, entityId, channel, destination], map: "notification_logs_lookup_idx")
+  @@index([status, createdAt], map: "notification_logs_status_idx")
+  @@map("notification_logs")
+}

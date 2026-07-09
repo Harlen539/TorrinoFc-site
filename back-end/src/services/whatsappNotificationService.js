@@ -1,16 +1,20 @@
 import { env } from '../config/env.js';
-import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { prisma } from '../lib/prisma.js';
 
 const CHANNEL = 'whatsapp';
 
 function isDuplicateError(error) {
-  return error?.code === '23505';
+  return error?.code === 'P2002';
 }
 
 function formatDate(value) {
   if (!value) return 'Data a definir';
 
-  const [year, month, day] = String(value).split('-').map(Number);
+  if (value instanceof Date) {
+    return value.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  }
+
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
   if (!year || !month || !day) return String(value);
 
   return new Date(year, month - 1, day).toLocaleDateString('pt-BR');
@@ -18,6 +22,16 @@ function formatDate(value) {
 
 function formatTime(value) {
   if (!value) return 'Horario a definir';
+
+  if (value instanceof Date) {
+    return value.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'UTC',
+    });
+  }
+
   return String(value).slice(0, 5);
 }
 
@@ -28,18 +42,18 @@ function compact(value, fallback = 'Nao informado') {
 
 function buildMatchMessage(match) {
   return [
-    '🏆 Nova partida agendada — Torrino FC',
+    '🏆 Nova partida agendada - Torrino FC',
     '',
-    `📅 Data: ${formatDate(match.match_date)}`,
-    `⏰ Horario: ${formatTime(match.match_time)}`,
+    `📅 Data: ${formatDate(match.matchDate)}`,
+    `⏰ Horario: ${formatTime(match.matchTime)}`,
     `📍 Local: ${compact(match.location)}`,
     '⚽ Tipo: Partida',
     '',
     'Times:',
-    `${compact(match.home_team, 'Torrino FC')} x ${compact(match.away_team, 'Adversario')}`,
+    `${compact(match.homeTeam, 'Torrino FC')} x ${compact(match.awayTeam, 'Adversario')}`,
     '',
     'Informacoes extras:',
-    compact(match.observations || match.notes),
+    compact(match.observations),
     '',
     'Acesse o site para mais detalhes.',
   ].join('\n');
@@ -47,10 +61,10 @@ function buildMatchMessage(match) {
 
 function buildTryoutMessage(tryout) {
   return [
-    '🔥 Nova peneira agendada — Torrino FC',
+    '🔥 Nova peneira agendada - Torrino FC',
     '',
-    `📅 Data: ${formatDate(tryout.tryout_date)}`,
-    `⏰ Horario: ${formatTime(tryout.tryout_time)}`,
+    `📅 Data: ${formatDate(tryout.tryoutDate)}`,
+    `⏰ Horario: ${formatTime(tryout.tryoutTime)}`,
     `📍 Local: ${compact(tryout.location)}`,
     `⚽ Categoria: ${compact(tryout.category, 'Geral')}`,
     '',
@@ -85,53 +99,49 @@ function getWhatsAppConfig() {
 }
 
 async function reserveNotificationLog({ eventType, entityId, destination, message }) {
-  const { data, error } = await supabaseAdmin
-    .from('notification_logs')
-    .insert({
-      event_type: eventType,
-      entity_id: entityId,
-      channel: CHANNEL,
-      destination,
-      status: 'pending',
-      message_body: message,
-    })
-    .select()
-    .single();
+  try {
+    const log = await prisma.notificationLog.create({
+      data: {
+        eventType,
+        entityId,
+        channel: CHANNEL,
+        destination,
+        status: 'pending',
+        messageBody: message,
+      },
+    });
 
-  if (!error) {
-    return { log: data, duplicate: false };
+    return { log, duplicate: false };
+  } catch (error) {
+    if (!isDuplicateError(error)) {
+      throw error;
+    }
+
+    const existing = await prisma.notificationLog.findFirst({
+      where: {
+        eventType,
+        entityId,
+        channel: CHANNEL,
+        destination,
+      },
+    });
+
+    return { log: existing, duplicate: true };
   }
-
-  if (!isDuplicateError(error)) {
-    throw error;
-  }
-
-  const { data: existing, error: selectError } = await supabaseAdmin
-    .from('notification_logs')
-    .select('*')
-    .eq('event_type', eventType)
-    .eq('entity_id', entityId)
-    .eq('channel', CHANNEL)
-    .eq('destination', destination)
-    .maybeSingle();
-
-  if (selectError) {
-    throw selectError;
-  }
-
-  return { log: existing, duplicate: true };
 }
 
 async function updateNotificationLog(logId, payload) {
-  const { error } = await supabaseAdmin
-    .from('notification_logs')
-    .update({
-      ...payload,
-      sent_at: payload.status === 'sent' ? new Date().toISOString() : null,
-    })
-    .eq('id', logId);
-
-  if (error) {
+  try {
+    await prisma.notificationLog.update({
+      where: { id: logId },
+      data: {
+        status: payload.status,
+        apiResponse: payload.apiResponse || null,
+        errorMessage: payload.errorMessage || null,
+        sentAt: payload.status === 'sent' ? new Date() : null,
+      },
+    });
+  } catch (error) {
     console.error('[whatsappNotificationService] Falha ao atualizar notification_logs:', error);
   }
 }
@@ -210,8 +220,8 @@ async function notifyOnce({ eventType, entityId, message }) {
   if (!config.ok) {
     await updateNotificationLog(log.id, {
       status: 'failed',
-      error_message: config.reason,
-      api_response: null,
+      errorMessage: config.reason,
+      apiResponse: null,
     });
     return { ok: false, error: config.reason, log };
   }
@@ -220,15 +230,15 @@ async function notifyOnce({ eventType, entityId, message }) {
     const apiResponse = await sendWhatsAppGroupMessage(message);
     await updateNotificationLog(log.id, {
       status: 'sent',
-      api_response: apiResponse,
-      error_message: null,
+      apiResponse,
+      errorMessage: null,
     });
     return { ok: true, apiResponse, log };
   } catch (error) {
     await updateNotificationLog(log.id, {
       status: 'failed',
-      api_response: error.response || null,
-      error_message: error.message,
+      apiResponse: error.response || null,
+      errorMessage: error.message,
     });
     console.error(`[whatsappNotificationService] Falha ao enviar ${eventType}/${entityId}:`, error.message);
     return { ok: false, error: error.message, log };
@@ -236,14 +246,10 @@ async function notifyOnce({ eventType, entityId, message }) {
 }
 
 export async function sendMatchNotification(matchId) {
-  const { data: match, error } = await supabaseAdmin
-    .from('matches')
-    .select('*')
-    .eq('id', matchId)
-    .single();
+  const match = await prisma.match.findUnique({ where: { id: matchId } });
 
-  if (error) {
-    throw error;
+  if (!match) {
+    throw new Error(`Partida nao encontrada: ${matchId}`);
   }
 
   return notifyOnce({
@@ -254,14 +260,10 @@ export async function sendMatchNotification(matchId) {
 }
 
 export async function sendTryoutNotification(tryoutId) {
-  const { data: tryout, error } = await supabaseAdmin
-    .from('tryouts')
-    .select('*')
-    .eq('id', tryoutId)
-    .single();
+  const tryout = await prisma.tryout.findUnique({ where: { id: tryoutId } });
 
-  if (error) {
-    throw error;
+  if (!tryout) {
+    throw new Error(`Peneira nao encontrada: ${tryoutId}`);
   }
 
   return notifyOnce({

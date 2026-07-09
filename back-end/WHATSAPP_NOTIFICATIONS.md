@@ -14,6 +14,7 @@ cp .env.example .env
 Variaveis principais:
 
 ```env
+DATABASE_URL=postgresql://postgres:[senha]@[host]:5432/postgres?schema=public
 WHATSAPP_ACCESS_TOKEN=seu-token-da-cloud-api
 WHATSAPP_PHONE_NUMBER_ID=seu-phone-number-id
 WHATSAPP_GROUP_ID=seu-group-id-oficial
@@ -89,7 +90,7 @@ Fluxo:
 
 ## Tabela `notification_logs`
 
-A migration `supabase/migrations/002_whatsapp_notification_logs.sql` cria:
+O modelo Prisma `NotificationLog` representa a tabela `notification_logs`:
 
 - `event_type`
 - `entity_id`
@@ -104,6 +105,15 @@ A migration `supabase/migrations/002_whatsapp_notification_logs.sql` cria:
 - `updated_at`
 
 A constraint unica em `(event_type, entity_id, channel, destination)` impede envio duplicado para o mesmo agendamento e destino.
+
+Para criar novas migrations:
+
+```bash
+cd back-end
+npm run db:migrate -- --name nome_da_migration
+```
+
+Veja tambem `PRISMA.md` para o fluxo completo de migrations.
 
 ## Servico
 

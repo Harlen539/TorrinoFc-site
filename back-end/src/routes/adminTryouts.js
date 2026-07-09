@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { parseDateInput, parseTimeInput } from '../lib/dateInput.js';
+import { prisma } from '../lib/prisma.js';
 import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
 
@@ -9,7 +10,8 @@ function validateTryoutPayload(body) {
   const errors = [];
 
   if (!body.title) errors.push('title e obrigatorio.');
-  if (!body.tryout_date) errors.push('tryout_date e obrigatorio.');
+  if (!parseDateInput(body.tryout_date)) errors.push('tryout_date precisa estar no formato YYYY-MM-DD.');
+  if (body.tryout_time && !parseTimeInput(body.tryout_time)) errors.push('tryout_time precisa estar no formato HH:mm.');
 
   return errors;
 }
@@ -22,10 +24,13 @@ adminTryoutsRouter.post('/api/admin/tryouts', requireAdminApiKey, async (request
     return;
   }
 
-  const payload = {
+  const tryoutDate = parseDateInput(request.body.tryout_date);
+  const tryoutTime = parseTimeInput(request.body.tryout_time);
+
+  const data = {
     title: request.body.title,
-    tryout_date: request.body.tryout_date,
-    tryout_time: request.body.tryout_time || null,
+    tryoutDate,
+    tryoutTime,
     location: request.body.location || null,
     category: request.body.category || 'Geral',
     requirements: request.body.requirements || null,
@@ -33,13 +38,10 @@ adminTryoutsRouter.post('/api/admin/tryouts', requireAdminApiKey, async (request
     status: request.body.status || 'Agendada',
   };
 
-  const { data: tryout, error } = await supabaseAdmin
-    .from('tryouts')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error) {
+  let tryout;
+  try {
+    tryout = await prisma.tryout.create({ data });
+  } catch (error) {
     response.status(500).json({ error: error.message });
     return;
   }
