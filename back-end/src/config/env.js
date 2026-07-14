@@ -8,6 +8,7 @@ export const env = {
   adminApiKey: process.env.ADMIN_API_KEY || '',
   databaseUrl: process.env.DATABASE_URL || '',
   whatsapp: {
+    notificationMode: process.env.WHATSAPP_NOTIFICATION_MODE || 'manual',
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
     groupId: process.env.WHATSAPP_GROUP_ID || '',

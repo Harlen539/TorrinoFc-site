@@ -1,6 +1,6 @@
 # WhatsApp Notifications
 
-Esta integracao usa somente a WhatsApp Business Platform / Cloud API no backend.
+Esta integracao pode funcionar em modo manual ou com a WhatsApp Business Platform / Cloud API no backend.
 Nao use WhatsApp Web, QR Code, scraping ou bibliotecas nao oficiais.
 
 ## Configuracao
@@ -15,17 +15,21 @@ Variaveis principais:
 
 ```env
 DATABASE_URL=postgresql://postgres:[senha]@[host]:5432/postgres?schema=public
-WHATSAPP_ACCESS_TOKEN=seu-token-da-cloud-api
-WHATSAPP_PHONE_NUMBER_ID=seu-phone-number-id
-WHATSAPP_GROUP_ID=seu-group-id-oficial
+WHATSAPP_NOTIFICATION_MODE=manual
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_GROUP_ID=
 WHATSAPP_API_VERSION=v22.0
 ```
 
-O link `chat.whatsapp.com` nao envia mensagem automaticamente. Ele serve apenas como referencia para identificar o grupo. Para envio real, configure o Group ID liberado pela Meta para a conta WhatsApp Business.
+Com `WHATSAPP_NOTIFICATION_MODE=manual`, nenhuma chave externa da Meta/Facebook Developers e necessaria. O backend registra a notificacao como `manual_required`, e o frontend usa o fallback que abre o grupo e copia a mensagem para colar manualmente.
+
+O link `chat.whatsapp.com` nao envia mensagem automaticamente. Ele serve apenas como referencia para abrir o grupo. Para envio automatico real, configure `WHATSAPP_NOTIFICATION_MODE=cloud_api` e o Group ID liberado pela Meta para a conta WhatsApp Business.
 
 Se a conta nao tiver acesso a Groups API, use a alternativa oficial:
 
 ```env
+WHATSAPP_NOTIFICATION_MODE=cloud_api
 WHATSAPP_ADMIN_RECIPIENTS=5585999999999,5585888888888
 ```
 

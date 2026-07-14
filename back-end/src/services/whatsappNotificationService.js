@@ -79,7 +79,15 @@ function buildTryoutMessage(tryout) {
 }
 
 function getWhatsAppConfig() {
-  const { accessToken, phoneNumberId, groupId, apiVersion, adminRecipients } = env.whatsapp;
+  const { notificationMode, accessToken, phoneNumberId, groupId, apiVersion, adminRecipients } = env.whatsapp;
+
+  if (notificationMode === 'manual') {
+    return {
+      ok: false,
+      mode: 'manual',
+      reason: 'WHATSAPP_NOTIFICATION_MODE=manual: envio automatico desativado. Use o fallback manual do app.',
+    };
+  }
 
   if (!accessToken || !phoneNumberId || !apiVersion) {
     return {
@@ -95,7 +103,7 @@ function getWhatsAppConfig() {
     };
   }
 
-  return { ok: true, accessToken, phoneNumberId, groupId, apiVersion, adminRecipients };
+  return { ok: true, mode: 'cloud_api', accessToken, phoneNumberId, groupId, apiVersion, adminRecipients };
 }
 
 async function reserveNotificationLog({ eventType, entityId, destination, message }) {
@@ -209,7 +217,11 @@ export async function sendWhatsAppGroupMessage(message) {
 
 async function notifyOnce({ eventType, entityId, message }) {
   const config = getWhatsAppConfig();
-  const destination = config.ok && config.groupId ? config.groupId : `admins:${env.whatsapp.adminRecipients.join(',')}`;
+  const destination = config.mode === 'manual'
+    ? 'manual:whatsapp-group'
+    : config.ok && config.groupId
+      ? config.groupId
+      : `admins:${env.whatsapp.adminRecipients.join(',')}`;
   const { log, duplicate } = await reserveNotificationLog({ eventType, entityId, destination, message });
 
   if (duplicate) {
@@ -219,7 +231,7 @@ async function notifyOnce({ eventType, entityId, message }) {
 
   if (!config.ok) {
     await updateNotificationLog(log.id, {
-      status: 'failed',
+      status: config.mode === 'manual' ? 'manual_required' : 'failed',
       errorMessage: config.reason,
       apiResponse: null,
     });

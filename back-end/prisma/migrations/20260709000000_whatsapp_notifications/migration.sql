@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.notification_logs (
   entity_id UUID NOT NULL,
   channel TEXT NOT NULL DEFAULT 'whatsapp',
   destination TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped', 'manual_required')),
   message_body TEXT NOT NULL,
   api_response JSONB,
   error_message TEXT,
