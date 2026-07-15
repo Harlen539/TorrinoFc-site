@@ -856,6 +856,7 @@ function Landing({ onLogin, onRegister }) {
       <section className="hero">
         <img className="hero-bg" src={banner} alt="" />
         <div className="hero-content">
+          <img className="hero-crest" src={logo} alt="Escudo TorinnoFC" />
           <div className="eyebrow">
             <Sparkles size={16} />
             Est. 2026 | Plataforma oficial

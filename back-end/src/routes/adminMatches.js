@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { parseDateInput, parseTimeInput } from '../lib/dateInput.js';
 import { prisma } from '../lib/prisma.js';
+import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
 import { sendMatchNotification } from '../services/whatsappNotificationService.js';
 
@@ -9,8 +10,8 @@ export const adminMatchesRouter = Router();
 function validateMatchPayload(body) {
   const errors = [];
 
-  if (!body.home_team) errors.push('home_team e obrigatorio.');
-  if (!body.away_team) errors.push('away_team e obrigatorio.');
+  if (!sanitizeText(body.home_team, { maxLength: 80 })) errors.push('home_team e obrigatorio.');
+  if (!sanitizeText(body.away_team, { maxLength: 80 })) errors.push('away_team e obrigatorio.');
   if (!parseDateInput(body.match_date)) errors.push('match_date precisa estar no formato YYYY-MM-DD.');
   if (body.match_time && !parseTimeInput(body.match_time)) errors.push('match_time precisa estar no formato HH:mm.');
 
@@ -29,20 +30,21 @@ adminMatchesRouter.post('/api/admin/matches', requireAdminApiKey, async (request
   const matchTime = parseTimeInput(request.body.match_time);
 
   const data = {
-    homeTeam: request.body.home_team,
-    awayTeam: request.body.away_team,
+    homeTeam: sanitizeText(request.body.home_team, { maxLength: 80 }),
+    awayTeam: sanitizeText(request.body.away_team, { maxLength: 80 }),
     matchDate,
     matchTime,
-    location: request.body.location || null,
-    status: request.body.status || 'Agendada',
-    observations: request.body.observations || null,
+    location: sanitizeNullableText(request.body.location, { maxLength: 140 }),
+    status: sanitizeStatus(request.body.status),
+    observations: sanitizeNullableText(request.body.observations, { maxLength: 500 }),
   };
 
   let match;
   try {
     match = await prisma.match.create({ data });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    console.error('[adminMatches] Falha ao criar partida:', error);
+    response.status(500).json({ error: 'Nao foi possivel criar a partida.' });
     return;
   }
 
