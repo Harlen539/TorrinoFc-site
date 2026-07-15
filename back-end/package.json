@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "prisma generate",
+    "render:build": "npm install && npm run db:generate",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/prisma.js && node --check src/lib/dateInput.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js",

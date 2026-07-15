@@ -36,9 +36,16 @@ npm run dev
 Configure no `back-end/.env`:
 
 - `DATABASE_URL`
+- `DIRECT_URL`
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY`
+- `SUPABASE_JWKS_URL`
 - `ADMIN_API_KEY`
 - `WHATSAPP_NOTIFICATION_MODE=manual`
 - `WHATSAPP_API_VERSION`
+
+Para deploy no Render com Supabase Pooler, use `DATABASE_URL` na porta `6543` e `DIRECT_URL` na porta `5432`. O usuario do Pooler deve ser `postgres.<project-ref>`, nao apenas `postgres`.
 
 Com `WHATSAPP_NOTIFICATION_MODE=manual`, o app abre o grupo do WhatsApp e copia a mensagem para colar manualmente. O link `chat.whatsapp.com` nao envia mensagem automaticamente.
 
@@ -61,5 +68,13 @@ Em producao, aplique migrations com:
 ```bash
 npm run db:deploy
 ```
+
+No Render, use este build command para o backend:
+
+```bash
+npm run render:build
+```
+
+Rode `npm run db:deploy` separadamente apenas depois de confirmar que `DIRECT_URL` conecta com a senha correta do banco Supabase.
 
 Detalhes do fluxo Prisma estao em `back-end/PRISMA.md`.

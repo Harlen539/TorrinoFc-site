@@ -7,10 +7,20 @@ O backend usa Prisma para acessar o Postgres do Supabase e facilitar migrations.
 Configure apenas no backend:
 
 ```env
-DATABASE_URL=postgresql://postgres:[senha]@[host]:5432/postgres?schema=public
+DATABASE_URL=postgresql://postgres.<project-ref>:[senha]@aws-1-sa-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://postgres.<project-ref>:[senha]@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
 ```
 
-Nao coloque essa URL no frontend. Ela deve ficar somente em `back-end/.env`.
+Nao coloque essas URLs no frontend. Elas devem ficar somente em `back-end/.env` e nas variaveis de ambiente do backend no Render.
+
+No Supabase Pooler, o usuario precisa ter o formato `postgres.<project-ref>`. Se usar apenas `postgres` em `aws-*.pooler.supabase.com`, o deploy falha com `P1000: Authentication failed`.
+
+Use:
+
+- `DATABASE_URL`: Transaction pooler, porta `6543`, para a API em runtime.
+- `DIRECT_URL`: Session pooler, porta `5432`, para `prisma migrate deploy`.
+
+Se a senha tiver caracteres especiais como `#`, `@`, `%`, `/` ou `?`, copie a string pronta pelo painel do Supabase ou codifique a senha para URL.
 
 ## Comandos
 

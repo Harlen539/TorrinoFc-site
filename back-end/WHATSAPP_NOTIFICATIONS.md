@@ -14,13 +14,16 @@ cp .env.example .env
 Variaveis principais:
 
 ```env
-DATABASE_URL=postgresql://postgres:[senha]@[host]:5432/postgres?schema=public
+DATABASE_URL=postgresql://postgres.<project-ref>:[senha]@aws-1-sa-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://postgres.<project-ref>:[senha]@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
 WHATSAPP_NOTIFICATION_MODE=manual
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_PHONE_NUMBER_ID=
 WHATSAPP_GROUP_ID=
 WHATSAPP_API_VERSION=v22.0
 ```
+
+No Render, configure `DATABASE_URL` e `DIRECT_URL` no servico do backend. Para o Supabase Pooler, o usuario precisa ser `postgres.<project-ref>`, nao apenas `postgres`.
 
 Com `WHATSAPP_NOTIFICATION_MODE=manual`, nenhuma chave externa da Meta/Facebook Developers e necessaria. O backend registra a notificacao como `manual_required`, e o frontend usa o fallback que abre o grupo e copia a mensagem para colar manualmente.
 

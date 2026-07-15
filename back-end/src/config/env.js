@@ -7,6 +7,12 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   adminApiKey: process.env.ADMIN_API_KEY || '',
   databaseUrl: process.env.DATABASE_URL || '',
+  supabase: {
+    url: process.env.SUPABASE_URL || '',
+    publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
+    secretKey: process.env.SUPABASE_SECRET_KEY || '',
+    jwksUrl: process.env.SUPABASE_JWKS_URL || '',
+  },
   whatsapp: {
     notificationMode: process.env.WHATSAPP_NOTIFICATION_MODE || 'manual',
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
