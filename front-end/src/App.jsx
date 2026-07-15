@@ -34,10 +34,6 @@ import {
 
 const logo = '/assets/logo-torrino.png';
 const banner = '/assets/banner-torrino.png';
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '';
-const RECAPTCHA_PROVIDER = import.meta.env.VITE_RECAPTCHA_PROVIDER || 'classic';
-const PRIMARY_RECAPTCHA_PROVIDER = ['auto', 'enterprise'].includes(RECAPTCHA_PROVIDER) ? 'enterprise' : 'classic';
-const recaptchaLoaders = {};
 const WHATSAPP_GROUP_INVITE_URL = 'https://chat.whatsapp.com/H9xNmzvwgAbAJXd65BNrIf?mode=gi_t';
 const ADMIN_API_URL = import.meta.env.VITE_ADMIN_API_URL || '';
 const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || '';
@@ -893,8 +889,6 @@ function Landing({ onLogin, onRegister }) {
 
 function AuthScreen({ mode, setMode, onAuth, onBack }) {
   const [showPassword, setShowPassword] = useState(false);
-  const [recaptchaToken, setRecaptchaToken] = useState('');
-  const [recaptchaResetKey, setRecaptchaResetKey] = useState(0);
   const [form, setForm] = useState({
     name: '',
     nickname: '',
@@ -926,16 +920,10 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Preencha nome completo e apelido.');
       return;
     }
-    if (!recaptchaToken) {
-      setError('Confirme o reCAPTCHA antes de continuar.');
-      return;
-    }
 
-    const result = onAuth({ ...form, recaptchaToken }, isRegister);
+    const result = onAuth(form, isRegister);
     if (result?.error) {
       setError(result.error);
-      setRecaptchaToken('');
-      setRecaptchaResetKey((value) => value + 1);
       return;
     }
 
@@ -1008,15 +996,6 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
               <Field label="Camisa" type="number" value={form.shirt} onChange={(shirt) => setForm({ ...form, shirt })} />
             </div>
           )}
-          <RecaptchaBox
-            resetSignal={recaptchaResetKey}
-            onChange={(token) => {
-              setRecaptchaToken(token);
-              if (token && error === 'Confirme o reCAPTCHA antes de continuar.') {
-                setError('');
-              }
-            }}
-          />
           {error && <p className="form-error">{error}</p>}
           <button className="button primary full" type="submit">
             {isRegister ? 'Criar conta' : 'Entrar'}
@@ -1025,174 +1004,6 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
         </form>
       </section>
     </main>
-  );
-}
-
-function loadRecaptchaScript(provider = PRIMARY_RECAPTCHA_PROVIDER) {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('reCAPTCHA indisponivel fora do navegador.'));
-  }
-
-  const isEnterprise = provider === 'enterprise';
-  const readyApi = isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha;
-  if (readyApi?.render) {
-    return Promise.resolve(readyApi);
-  }
-
-  if (!recaptchaLoaders[provider]) {
-    recaptchaLoaders[provider] = new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[data-recaptcha-script="${provider}"]`);
-      if (existingScript) {
-        existingScript.addEventListener('load', () => resolve(isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha), { once: true });
-        existingScript.addEventListener('error', reject, { once: true });
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = isEnterprise
-        ? 'https://www.google.com/recaptcha/enterprise.js?render=explicit&hl=pt-BR'
-        : 'https://www.google.com/recaptcha/api.js?render=explicit&hl=pt-BR';
-      script.async = true;
-      script.defer = true;
-      script.dataset.recaptchaScript = provider;
-      script.onload = () => {
-        script.dataset.loaded = 'true';
-        const recaptchaApi = isEnterprise ? window.grecaptcha?.enterprise : window.grecaptcha;
-        if (recaptchaApi?.ready) {
-          recaptchaApi.ready(() => resolve(recaptchaApi));
-          return;
-        }
-        resolve(recaptchaApi);
-      };
-      script.onerror = () => reject(new Error('Nao foi possivel carregar o reCAPTCHA.'));
-      document.head.appendChild(script);
-    });
-  }
-
-  return recaptchaLoaders[provider];
-}
-
-function RecaptchaBox({ onChange, resetSignal }) {
-  const containerRef = useRef(null);
-  const widgetIdRef = useRef(null);
-  const widgetProviderRef = useRef(PRIMARY_RECAPTCHA_PROVIDER);
-  const onChangeRef = useRef(onChange);
-  const [status, setStatus] = useState('loading');
-
-  useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const renderWidget = (grecaptchaApi, sitekey, fallbackMode = 'primary', provider = PRIMARY_RECAPTCHA_PROVIDER) => {
-      if (cancelled || !containerRef.current) {
-        return;
-      }
-
-      containerRef.current.innerHTML = '';
-      widgetIdRef.current = null;
-      widgetProviderRef.current = provider;
-      setStatus('loading');
-
-      const tryNextMode = () => {
-        if (RECAPTCHA_PROVIDER === 'auto' && provider === 'enterprise' && fallbackMode === 'primary') {
-          loadRecaptchaScript('classic')
-            .then((classicApi) => {
-              window.setTimeout(() => renderWidget(classicApi, RECAPTCHA_SITE_KEY, 'classic-same-key', 'classic'), 0);
-            })
-            .catch(() => {
-              setStatus('error');
-            });
-          return true;
-        }
-
-        return false;
-      };
-
-      try {
-        const widgetOptions = {
-          sitekey,
-          theme: 'dark',
-          callback: (token) => {
-            setStatus('ready');
-            onChangeRef.current(token);
-          },
-          'expired-callback': () => {
-            setStatus('expired');
-            onChangeRef.current('');
-          },
-          'error-callback': () => {
-            onChangeRef.current('');
-            if (tryNextMode()) {
-              return;
-            }
-            setStatus('error');
-          },
-        };
-
-        if (provider === 'enterprise') {
-          widgetOptions.action = 'LOGIN';
-        }
-
-        widgetIdRef.current = grecaptchaApi.render(containerRef.current, widgetOptions);
-        setStatus('ready');
-      } catch {
-        onChangeRef.current('');
-        if (tryNextMode()) {
-          return;
-        }
-        setStatus(provider === 'enterprise' ? 'enterprise-config-error' : 'error');
-      }
-    };
-
-    if (!RECAPTCHA_SITE_KEY) {
-      setStatus('config-error');
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    loadRecaptchaScript(PRIMARY_RECAPTCHA_PROVIDER)
-      .then((grecaptchaApi) => {
-        if (cancelled || !containerRef.current || widgetIdRef.current !== null) {
-          return;
-        }
-
-        renderWidget(grecaptchaApi, RECAPTCHA_SITE_KEY, 'primary', PRIMARY_RECAPTCHA_PROVIDER);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStatus('error');
-          onChangeRef.current('');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const recaptchaApi = widgetProviderRef.current === 'enterprise' ? window.grecaptcha?.enterprise : window.grecaptcha;
-    if (widgetIdRef.current === null || !recaptchaApi?.reset) {
-      return;
-    }
-
-    recaptchaApi.reset(widgetIdRef.current);
-    onChangeRef.current('');
-  }, [resetSignal]);
-
-  return (
-    <div className="recaptcha-panel">
-      <div ref={containerRef} className="recaptcha-widget" />
-      {status === 'loading' && <span>Carregando reCAPTCHA oficial...</span>}
-      {status === 'expired' && <span>reCAPTCHA expirou. Confirme novamente.</span>}
-      {status === 'error' && <span>Nao foi possivel carregar o reCAPTCHA oficial. Recarregue a pagina ou confira o dominio da chave.</span>}
-      {status === 'config-error' && <span>Adicione a chave publica do reCAPTCHA v2 no arquivo .env.</span>}
-      {status === 'enterprise-config-error' && <span>A chave precisa ser uma chave de caixa de selecao do reCAPTCHA Enterprise.</span>}
-    </div>
   );
 }
 

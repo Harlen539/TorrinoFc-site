@@ -644,38 +644,6 @@ form {
   opacity: 0;
 }
 
-.recaptcha-panel {
-  display: grid;
-  gap: 8px;
-  justify-items: stretch;
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.recaptcha-widget {
-  width: 100%;
-  min-height: 78px;
-  overflow: hidden;
-  border-radius: 4px;
-}
-
-.recaptcha-panel span,
-.recaptcha-panel small {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.recaptcha-panel small {
-  max-width: 100%;
-  color: rgba(247, 213, 138, 0.82);
-  text-align: center;
-}
-
 .app-shell {
   min-height: 100vh;
   display: grid;

@@ -13,9 +13,6 @@ export const env = {
     secretKey: process.env.SUPABASE_SECRET_KEY || '',
     jwksUrl: process.env.SUPABASE_JWKS_URL || '',
   },
-  recaptcha: {
-    secretKey: process.env.RECAPTCHA_SECRET_KEY || '',
-  },
   whatsapp: {
     notificationMode: process.env.WHATSAPP_NOTIFICATION_MODE || 'manual',
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
