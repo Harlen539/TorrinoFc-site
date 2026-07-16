@@ -3107,6 +3107,50 @@ section {
   font-size: 12px;
 }
 
+.settings-account-card,
+.settings-password-form {
+  grid-column: 1 / -1;
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.settings-account-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.settings-account-copy,
+.settings-password-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.settings-account-copy strong,
+.settings-account-copy span,
+.settings-password-copy strong,
+.settings-password-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-account-copy span,
+.settings-password-copy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-password-form {
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(160px, 1fr)) auto;
+}
+
+.settings-password-form .field {
+  margin: 0;
+}
+
 .settings-page {
   gap: 14px;
 }
@@ -4284,6 +4328,14 @@ section,
   .user-role-row .role-badge,
   .user-role-row select {
     grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .settings-password-form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-password-form .button {
     width: 100%;
   }
 

@@ -176,11 +176,14 @@ model NotificationPreference {
 
 model Tryout {
   id           String    @id @default(uuid()) @db.Uuid
+  teamName     String    @default("Torinno FC") @map("team_name")
   title        String
+  overall      Int?
   tryoutDate   DateTime  @map("tryout_date") @db.Date
   tryoutTime   DateTime? @map("tryout_time") @db.Time(6)
   location     String?
   category     String    @default("Geral")
+  contact      String?
   requirements String?
   observations String?
   status       String    @default("Agendada")
@@ -188,6 +191,7 @@ model Tryout {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
+  @@index([teamName, status], map: "tryouts_team_status_idx")
   @@map("tryouts")
 }
 

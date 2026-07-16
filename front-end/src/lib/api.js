@@ -1,3 +1,5 @@
+import { hasSupabaseConfig, supabase } from './supabaseClient.js';
+
 const API_BASE_URL = (import.meta.env.VITE_ADMIN_API_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
 const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || '';
 
@@ -6,22 +8,44 @@ async function request(path, { method = 'GET', body, admin = false, userEmail = 
     'Content-Type': 'application/json',
   };
 
-  if (admin) {
-    if (!ADMIN_API_KEY) {
-      throw new Error('VITE_ADMIN_API_KEY nao configurada no frontend.');
-    }
+  if (admin && ADMIN_API_KEY) {
     headers['x-admin-api-key'] = ADMIN_API_KEY;
   }
 
-  if (userEmail) {
-    headers['x-user-email'] = userEmail;
+  if (hasSupabaseConfig) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    if (!userEmail && data.session?.user?.email) {
+      userEmail = data.session.user.email;
+    }
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  if (!userEmail) {
+    try {
+      const savedSession = JSON.parse(localStorage.getItem('torinnofc-session') || '{}');
+      userEmail = savedSession.email || '';
+    } catch {
+      userEmail = '';
+    }
+  }
+
+  if (userEmail) {
+    headers['x-user-email'] = String(userEmail).trim().toLowerCase();
+  }
+
+  const options = {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  };
+
+  if (body !== undefined && method !== 'GET') {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, options);
 
   if (response.status === 204) return null;
 
@@ -58,6 +82,26 @@ export function deletePlayer(id) {
   return request(`/api/players/${id}`, { method: 'DELETE', admin: true });
 }
 
+export function fetchTryouts() {
+  return request('/api/tryouts').then((payload) => payload.tryouts || []);
+}
+
+export function createTryout(payload) {
+  return request('/api/tryouts', { method: 'POST', body: payload, admin: true }).then((data) => data.tryout);
+}
+
+export function updateTryout(id, payload) {
+  return request(`/api/tryouts/${id}`, { method: 'PUT', body: payload, admin: true }).then((data) => data.tryout);
+}
+
+export function updateTryoutStatus(id, status) {
+  return request(`/api/tryouts/${id}/status`, { method: 'PATCH', body: { status }, admin: true }).then((data) => data.tryout);
+}
+
+export function deleteTryout(id) {
+  return request(`/api/tryouts/${id}`, { method: 'DELETE', admin: true });
+}
+
 export function createMatch(payload) {
   return request('/api/matches', { method: 'POST', body: payload, admin: true }).then((data) => data.match);
 }
@@ -91,7 +135,7 @@ export function syncUser(payload) {
 }
 
 export function fetchUsers() {
-  return request('/api/users', { admin: true }).then((data) => data.users || []);
+  return request('/api/users').then((data) => data.users || []);
 }
 
 export function updateUserRole(id, role) {

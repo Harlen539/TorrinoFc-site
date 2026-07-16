@@ -101,3 +101,24 @@ export function serializePlayer(player) {
     },
   };
 }
+
+export function serializeTryout(tryout) {
+  return {
+    id: tryout.id,
+    teamName: tryout.teamName || 'Torinno FC',
+    fullName: tryout.title,
+    title: tryout.title,
+    age: tryout.overall || '',
+    overall: tryout.overall || '',
+    position: tryout.category || 'Geral',
+    contact: tryout.contact || '',
+    date: formatDate(tryout.tryoutDate),
+    time: formatTime(tryout.tryoutTime),
+    place: tryout.location || 'EA FC 26 | Clubs',
+    notes: tryout.observations || '',
+    status: tryout.status,
+    createdBy: tryout.createdBy || '',
+    createdAt: tryout.createdAt,
+    updatedAt: tryout.updatedAt,
+  };
+}

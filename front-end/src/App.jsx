@@ -41,6 +41,7 @@ import {
   deleteMatch as apiDeleteMatch,
   deleteNotification as apiDeleteNotification,
   deletePlayer as apiDeletePlayer,
+  deleteTryout as apiDeleteTryout,
   fetchChampionships,
   fetchMatches,
   fetchNotificationPreferences,
@@ -48,20 +49,21 @@ import {
   markAllNotificationsRead as apiMarkAllNotificationsRead,
   markNotificationRead as apiMarkNotificationRead,
   fetchPlayers,
+  fetchTryouts,
   fetchUsers,
   syncUser as apiSyncUser,
   updateChampionship as apiUpdateChampionship,
   updateMatch as apiUpdateMatch,
   updateNotificationPreferences,
   updatePlayerStats as apiUpdatePlayerStats,
+  createTryout as apiCreateTryout,
+  updateTryoutStatus as apiUpdateTryoutStatus,
   updateUserRole as apiUpdateUserRole,
 } from './lib/api.js';
 
 const logo = '/assets/logo-torrino.png';
 const banner = '/assets/banner-torrino.png';
 const WHATSAPP_GROUP_INVITE_URL = 'https://chat.whatsapp.com/H9xNmzvwgAbAJXd65BNrIf?mode=gi_t';
-const ADMIN_API_URL = import.meta.env.VITE_ADMIN_API_URL || '';
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || '';
 
 const initialPlayers = [];
 
@@ -112,6 +114,10 @@ const gamePositions = [
 ];
 
 const statusFlow = ['Agendada', 'Em andamento', 'Encerrada'];
+const accountRoles = [
+  { value: 'player', label: 'Jogador' },
+  { value: 'admin', label: 'Admin' },
+];
 
 function toDateKey(date) {
   const year = date.getFullYear();
@@ -211,84 +217,6 @@ function buildCalendarEvents(matches, tryouts = []) {
   ];
 }
 
-async function sendOfficialNotification(kind, payload) {
-  if (!ADMIN_API_URL || !ADMIN_API_KEY) {
-    return { ok: false, reason: 'backend-not-configured' };
-  }
-
-  const endpoint = kind === 'match' ? '/api/admin/matches' : '/api/admin/tryouts';
-  const response = await fetch(`${ADMIN_API_URL.replace(/\/$/, '')}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-api-key': ADMIN_API_KEY,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(detail || `Falha HTTP ${response.status}`);
-  }
-
-  return response.json();
-}
-
-async function notifyMatchCreated(match, notify) {
-  const message = buildMatchWhatsAppMessage(match);
-
-  try {
-    const result = await sendOfficialNotification('match', {
-      home_team: match.home || 'TorinnoFC',
-      away_team: match.away,
-      match_date: match.dateKey,
-      match_time: match.time,
-      location: match.place,
-      status: match.status,
-      observations: match.championship,
-    });
-
-    if (result?.notification?.ok) {
-      notify('Partida criada, calendario atualizado e WhatsApp oficial enviado.');
-      return;
-    }
-  } catch {
-    // Fallback abaixo abre o grupo e copia a mensagem.
-  }
-
-  openWhatsAppGroupWithMessage(message, notify);
-}
-
-async function notifyTryoutCreated(tryout, notify) {
-  const message = buildTryoutWhatsAppMessage(tryout);
-
-  try {
-    const result = await sendOfficialNotification('tryout', {
-      title: tryout.fullName || 'Peneira TorrinoFC',
-      tryout_date: tryout.date,
-      tryout_time: tryout.time,
-      location: tryout.place,
-      category: tryout.position,
-      requirements: tryout.age ? `OVR ${tryout.age}` : '',
-      observations: [tryout.contact, tryout.notes].filter(Boolean).join(' | '),
-      status: tryout.status,
-    });
-
-    if (result?.notification?.ok) {
-      notify('Peneira criada, calendario atualizado e WhatsApp oficial enviado.');
-      return;
-    }
-  } catch {
-    // Fallback abaixo abre o grupo e copia a mensagem.
-  }
-
-  openWhatsAppGroupWithMessage(message, notify);
-}
-
-function openWhatsAppGroupWithMessage(message, notify) {
-  openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, message, notify);
-}
-
 function openWhatsAppWithPreparedMessage(whatsappUrl, message, notify) {
   const targetUrl = buildWhatsAppUrlWithMessage(whatsappUrl || WHATSAPP_GROUP_INVITE_URL, message);
   const tab = window.open(targetUrl, '_blank', 'noopener,noreferrer');
@@ -381,21 +309,6 @@ function makeCalendarDays(monthDate) {
   });
 }
 
-function readStorageList(key, fallback) {
-  try {
-    const saved = localStorage.getItem(key);
-    if (!saved) {
-      return fallback;
-    }
-
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    localStorage.removeItem(key);
-    return fallback;
-  }
-}
-
 function readSavedUsers() {
   return initialUsers;
 }
@@ -429,30 +342,21 @@ function readSavedSession(users = readSavedUsers()) {
   }
 }
 
-function readSavedTryouts() {
-  try {
-    const saved = localStorage.getItem('torinnofc-tryouts');
-    if (!saved) {
-      return initialTryouts;
-    }
-
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed)
-      ? parsed.map(normalizeTryout).filter((tryout) => tryout.fullName !== 'Kilderyyy35')
-      : initialTryouts;
-  } catch {
-    localStorage.removeItem('torinnofc-tryouts');
-    return initialTryouts;
-  }
-}
-
 function normalizeTryout(tryout) {
   return {
     ...tryout,
-    place: tryout.place === 'Arena Society Norte' ? 'EA FC 26 | Clubs' : tryout.place,
-    notes: tryout.notes?.toLowerCase().includes('chuteira')
+    id: tryout.id || Date.now(),
+    fullName: tryout.fullName || tryout.title || 'Novo jogador',
+    age: tryout.age || tryout.overall || '',
+    position: tryout.position || tryout.category || 'Geral',
+    contact: tryout.contact || '',
+    date: tryout.date || tryout.tryoutDate || toDateKey(new Date()),
+    time: tryout.time || tryout.tryoutTime || 'A definir',
+    place: (tryout.place || tryout.location) === 'Arena Society Norte' ? 'EA FC 26 | Clubs' : (tryout.place || tryout.location || 'EA FC 26 | Clubs'),
+    notes: (tryout.notes || tryout.observations)?.toLowerCase().includes('chuteira')
       ? 'Teste em lobby privado. Entrar 10 min antes e usar headset.'
-      : tryout.notes,
+      : (tryout.notes || tryout.observations || ''),
+    status: tryout.status || 'Agendada',
   };
 }
 
@@ -511,24 +415,6 @@ function roleLabel(role) {
   return role === 'admin' ? 'Administrador' : 'Jogador';
 }
 
-function createPlayerFromUser(user) {
-  return normalizePlayer({
-    id: Date.now(),
-    userId: user.id,
-    fullName: user.name,
-    nickname: user.nickname,
-    position: user.position,
-    shirt: Number(user.shirt) || 0,
-    foot: 'Direito',
-    status: 'Ativo',
-    role: user.staffRole || 'Jogador',
-    avatar: getInitials(user.nickname || user.name),
-    photo: user.photo || '',
-    bio: 'Novo jogador cadastrado na plataforma TorinnoFC.',
-    stats: { goals: 0, assists: 0, recoveries: 0, matches: 0, wins: 0, losses: 0, rating: 0 },
-  });
-}
-
 function findPlayerForUser(user, players) {
   return players.find((player) => player.userId === user.id || player.id === user.playerId) || null;
 }
@@ -545,7 +431,7 @@ function App() {
   const [serverState, setServerState] = useState({ loading: true, error: '' });
   const [notificationsState, setNotificationsState] = useState({ loading: false, error: '', items: [], unreadCount: 0 });
   const [notificationPreferences, setNotificationPreferences] = useState(null);
-  const [tryouts, setTryouts] = useState(readSavedTryouts);
+  const [tryouts, setTryouts] = useState(initialTryouts);
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
 
@@ -565,14 +451,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('torinnofc-users', JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    localStorage.setItem('torinnofc-players', JSON.stringify(players));
-  }, [players]);
-
-  useEffect(() => {
     let active = true;
 
     const loadServerData = async ({ silent = false } = {}) => {
@@ -581,10 +459,11 @@ function App() {
       }
 
       try {
-        const [nextMatches, nextChampionships, nextPlayers, nextUsers] = await Promise.all([
+        const [nextMatches, nextChampionships, nextPlayers, nextTryouts, nextUsers] = await Promise.all([
           fetchMatches(),
           fetchChampionships(),
           fetchPlayers(),
+          fetchTryouts(),
           fetchUsers().catch(() => []),
         ]);
 
@@ -593,14 +472,13 @@ function App() {
         setMatches(nextMatches.map(normalizeMatchEvent));
         setChampionships(nextChampionships);
         setPlayers(nextPlayers.map(normalizePlayer));
-        if (nextUsers.length) {
-          setUsers(nextUsers.map((user) => normalizeUser({
-            ...user,
-            id: user.id,
-            backendId: user.id,
-            role: user.role === 'admin' ? 'admin' : 'player',
-          })));
-        }
+        setTryouts(nextTryouts.map(normalizeTryout));
+        setUsers(nextUsers.map((user) => normalizeUser({
+          ...user,
+          id: user.id,
+          backendId: user.id,
+          role: user.role === 'admin' ? 'admin' : 'player',
+        })));
         setServerState({ loading: false, error: '' });
       } catch (error) {
         if (!active) return;
@@ -634,10 +512,6 @@ function App() {
       localStorage.removeItem('torinnofc-session');
     }
   }, [session]);
-
-  useEffect(() => {
-    localStorage.setItem('torinnofc-tryouts', JSON.stringify(tryouts));
-  }, [tryouts]);
 
   useEffect(() => {
     if (!session?.email) {
@@ -701,18 +575,31 @@ function App() {
     const email = normalizeEmail(supabaseUser.email);
     const metadata = supabaseUser.user_metadata || {};
     const existing = users.find((user) => user.email.toLowerCase() === email);
-    const user = normalizeUser({
-      ...(existing || {}),
+    let user = normalizeUser({
+      ...existing,
       id: existing?.id || supabaseUser.id,
       name: metadata.name || existing?.name || email.split('@')[0],
       nickname: metadata.nickname || existing?.nickname || metadata.name || email.split('@')[0],
       email,
       password: existing?.password || '',
-      role: existing?.role || 'player',
-      staffRole: existing?.staffRole || 'Membro',
+      role: existing?.role || metadata.role || 'player',
+      staffRole: existing?.staffRole || metadata.staffRole || (metadata.role === 'admin' ? 'Admin' : 'Jogador'),
       position: metadata.position || existing?.position || 'Meio-campo',
       shirt: metadata.shirt || existing?.shirt || '10',
     });
+
+    try {
+      const synced = await apiSyncUser(user);
+      user = normalizeUser({
+        ...user,
+        id: synced.id,
+        backendId: synced.id,
+        role: synced.role,
+        staffRole: synced.staffRole,
+      });
+    } catch {
+      // Mantem a sessao do Supabase ativa mesmo se o perfil local ainda nao sincronizar.
+    }
 
     if (existing) {
       setUsers((items) => items.map((item) => (item.email.toLowerCase() === email ? user : item)));
@@ -722,7 +609,6 @@ function App() {
 
     setSession(publicUser(user));
     setView('dashboard');
-    apiSyncUser(user).catch(() => {});
     return { ok: true };
   };
 
@@ -737,6 +623,9 @@ function App() {
       if (existing) {
         return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
       }
+      if (!accountRoles.some((role) => role.value === form.role)) {
+        return { error: 'Selecione o cargo da conta.' };
+      }
 
       if (hasSupabaseConfig) {
         const { data, error } = await supabase.auth.signUp({
@@ -749,6 +638,8 @@ function App() {
               nickname: form.nickname.trim(),
               position: form.position,
               shirt: form.shirt,
+              role: form.role,
+              staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
             },
           },
         });
@@ -765,16 +656,25 @@ function App() {
             nickname: metadata.nickname || form.nickname.trim(),
             email,
             password: form.password,
-            role: email.includes('admin') ? 'admin' : 'player',
-            staffRole: email.includes('admin') ? 'Admin' : 'Jogador',
+            role: form.role,
+            staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
             position: metadata.position || form.position,
             shirt: metadata.shirt || form.shirt,
           });
 
+          try {
+            const synced = await apiSyncUser(user);
+            user.id = synced.id;
+            user.backendId = synced.id;
+            user.role = synced.role;
+            user.staffRole = synced.staffRole;
+          } catch {
+            return { error: 'Conta criada, mas nao foi possivel salvar o perfil no banco. Tente entrar novamente em alguns segundos.' };
+          }
+
           setUsers((items) => [...items, user]);
           setSession(publicUser(user));
           setView('dashboard');
-          apiSyncUser(user).catch(() => {});
           return { ok: true };
         }
       }
@@ -785,17 +685,29 @@ function App() {
         nickname: form.nickname.trim(),
         email,
         password: form.password,
-        role: email.includes('admin') ? 'admin' : 'player',
-        staffRole: email.includes('admin') ? 'Admin' : 'Jogador',
+        role: form.role,
+        staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
         position: form.position,
         shirt: form.shirt,
       });
-      const userWithPlayer = { ...user };
+
+      let userWithPlayer = { ...user };
+      try {
+        const synced = await apiSyncUser(userWithPlayer);
+        userWithPlayer = normalizeUser({
+          ...userWithPlayer,
+          id: synced.id,
+          backendId: synced.id,
+          role: synced.role,
+          staffRole: synced.staffRole,
+        });
+      } catch {
+        return { error: 'Nao foi possivel salvar o usuario no banco. Verifique o backend e tente novamente.' };
+      }
 
       setUsers((items) => [...items, userWithPlayer]);
       setSession(publicUser(userWithPlayer));
       setView('dashboard');
-      apiSyncUser(userWithPlayer).catch(() => {});
       return { ok: true };
     }
 
@@ -957,7 +869,6 @@ function App() {
       view={view}
       setView={setView}
       onLogout={logout}
-      notify={notify}
       notificationsState={notificationsState}
       markNotificationRead={markNotificationRead}
       markAllNotificationsRead={markAllNotificationsRead}
@@ -1080,6 +991,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
     nickname: '',
     email: '',
     password: '',
+    role: 'player',
     position: 'Meio-campo',
     shirt: '10',
     website: '',
@@ -1106,6 +1018,10 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
     }
     if (isRegister && (!form.name.trim() || !form.nickname.trim())) {
       setError('Preencha nome completo e apelido.');
+      return;
+    }
+    if (isRegister && !accountRoles.some((role) => role.value === form.role)) {
+      setError('Selecione o cargo da conta.');
       return;
     }
 
@@ -1202,6 +1118,14 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
           {isRegister && (
             <div className="form-grid">
               <label className="field">
+                <span>Cargo</span>
+                <select value={form.role} required onChange={(event) => setForm({ ...form, role: event.target.value })}>
+                  {accountRoles.map((role) => (
+                    <option value={role.value} key={role.value}>{role.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
                 <span>Posicao</span>
                 <select value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })}>
                   {positions.map((position) => (
@@ -1229,7 +1153,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
   );
 }
 
-function DashboardShell({ children, user, view, setView, onLogout, notify, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
+function DashboardShell({ children, user, view, setView, onLogout, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
   const [open, setOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const unreadCount = notificationsState?.unreadCount || 0;
@@ -1258,7 +1182,7 @@ function DashboardShell({ children, user, view, setView, onLogout, notify, notif
         </div>
 
         <nav className="side-nav">
-          {navItems.filter((item) => !['admin', 'settings'].includes(item.id) || user.role === 'admin').map((item) => {
+          {navItems.filter((item) => item.id !== 'admin' || user.role === 'admin').map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -2231,7 +2155,7 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
 function Performance({ user, players, setPlayers, updatePlayerStats, notify }) {
   const me = findPlayerForUser(user, players);
   const [stats, setStats] = useState({
-    ...(me?.stats || {}),
+    ...me?.stats,
     shots: me?.stats?.shots || 0,
     passes: me?.stats?.passes || 0,
     yellow: me?.stats?.yellow || 0,
@@ -2367,7 +2291,7 @@ function Players({ players, setView, setSelectedPlayerId }) {
   );
 }
 
-function Tryouts({ tryouts, setTryouts, notify }) {
+function Tryouts({ user, tryouts, setTryouts, notify }) {
   const [form, setForm] = useState({
     fullName: '',
     age: '',
@@ -2378,9 +2302,14 @@ function Tryouts({ tryouts, setTryouts, notify }) {
     place: 'EA FC 26 | Clubs',
     notes: '',
   });
+  const isAdmin = user?.role === 'admin';
 
   const submit = async (event) => {
     event.preventDefault();
+    if (!isAdmin) {
+      notify('Somente administradores podem agendar peneiras.');
+      return;
+    }
     if (!form.fullName.trim() || !form.contact.trim() || !form.date || !form.time) {
       notify('Preencha EA ID, contato, data e horario do teste.');
       return;
@@ -2393,8 +2322,17 @@ function Tryouts({ tryouts, setTryouts, notify }) {
       status: 'Agendada',
     };
 
-    setTryouts([tryout, ...tryouts]);
-    await notifyTryoutCreated(tryout, notify);
+    try {
+      const saved = await apiCreateTryout(tryout);
+      const normalized = normalizeTryout(saved);
+      setTryouts([normalized, ...tryouts]);
+      openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(normalized), notify);
+      notify('Peneira agendada e salva no banco.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel agendar a peneira.');
+      return;
+    }
+
     setForm({
       fullName: '',
       age: '',
@@ -2407,50 +2345,75 @@ function Tryouts({ tryouts, setTryouts, notify }) {
     });
   };
 
-  const updateStatus = (id, status) => {
-    setTryouts(tryouts.map((tryout) => (tryout.id === id ? { ...tryout, status } : tryout)));
-    notify(`Teste marcado como ${status.toLowerCase()}.`);
+  const updateStatus = async (id, status) => {
+    try {
+      const saved = await apiUpdateTryoutStatus(id, status);
+      setTryouts(tryouts.map((tryout) => (tryout.id === id ? normalizeTryout(saved) : tryout)));
+      notify(`Teste marcado como ${status.toLowerCase()}.`);
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel atualizar a peneira.');
+    }
+  };
+
+  const removeTryout = async (id) => {
+    try {
+      await apiDeleteTryout(id);
+      setTryouts(tryouts.filter((item) => item.id !== id));
+      notify('Teste removido.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel remover a peneira.');
+    }
   };
 
   return (
     <section>
-      <SectionHeader eyebrow="EA Sports FC | Pro Clubs" title="Agendar teste" />
+      <SectionHeader eyebrow="EA Sports FC | Pro Clubs" title={isAdmin ? 'Agendar teste' : 'Peneiras'} />
       <div className="tryout-layout">
-        <form className="panel tryout-form" onSubmit={submit}>
-          <h3>Novo teste no EA FC</h3>
-          <div className="form-grid">
-            <Field label="EA ID / gamertag" value={form.fullName} onChange={(fullName) => setForm({ ...form, fullName })} />
-            <Field label="Overall" type="number" value={form.age} onChange={(age) => setForm({ ...form, age })} />
-          </div>
-          <div className="form-grid">
+        {isAdmin ? (
+          <form className="panel tryout-form" onSubmit={submit}>
+            <h3>Novo teste no EA FC</h3>
+            <div className="form-grid">
+              <Field label="EA ID / gamertag" value={form.fullName} onChange={(fullName) => setForm({ ...form, fullName })} />
+              <Field label="Overall" type="number" value={form.age} onChange={(age) => setForm({ ...form, age })} />
+            </div>
+            <div className="form-grid">
+              <label className="field">
+                <span>Posicao no jogo</span>
+                <select value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })}>
+                  {gamePositions.map((position) => (
+                    <option key={position}>{position}</option>
+                  ))}
+                </select>
+              </label>
+              <Field label="Contato / Discord" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} />
+            </div>
+            <div className="form-grid three">
+              <Field label="Data" type="date" value={form.date} onChange={(date) => setForm({ ...form, date })} />
+              <Field label="Horario" type="time" value={form.time} onChange={(time) => setForm({ ...form, time })} />
+              <Field label="Plataforma / modo" value={form.place} onChange={(place) => setForm({ ...form, place })} />
+            </div>
             <label className="field">
-              <span>Posicao no jogo</span>
-              <select value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })}>
-                {gamePositions.map((position) => (
-                  <option key={position}>{position}</option>
-                ))}
-              </select>
+              <span>Observacoes</span>
+              <textarea
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                placeholder="Ex: disponibilidade, estilo de jogo, headset, posicoes secundarias"
+              />
             </label>
-            <Field label="Contato / Discord" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} />
+            <button className="button primary full" type="submit">
+              <CalendarDays size={16} />
+              Agendar teste
+            </button>
+          </form>
+        ) : (
+          <div className="panel tryout-info">
+            <UserPlus size={24} />
+            <div>
+              <h3>Peneiras do clube</h3>
+              <p>Acompanhe os testes agendados pelos administradores do TorinnoFC.</p>
+            </div>
           </div>
-          <div className="form-grid three">
-            <Field label="Data" type="date" value={form.date} onChange={(date) => setForm({ ...form, date })} />
-            <Field label="Horario" type="time" value={form.time} onChange={(time) => setForm({ ...form, time })} />
-            <Field label="Plataforma / modo" value={form.place} onChange={(place) => setForm({ ...form, place })} />
-          </div>
-          <label className="field">
-            <span>Observacoes</span>
-            <textarea
-              value={form.notes}
-              onChange={(event) => setForm({ ...form, notes: event.target.value })}
-              placeholder="Ex: disponibilidade, estilo de jogo, headset, posicoes secundarias"
-            />
-          </label>
-          <button className="button primary full" type="submit">
-            <CalendarDays size={16} />
-            Agendar teste
-          </button>
-        </form>
+        )}
 
         <div className="tryout-stack">
           <div className="panel tryout-info">
@@ -2477,21 +2440,20 @@ function Tryouts({ tryouts, setTryouts, notify }) {
                   <small>{tryout.contact}</small>
                   {tryout.notes && <em>{tryout.notes}</em>}
                 </div>
-                <div className="tryout-actions">
-                  <button className={`status ${tryout.status === 'Confirmada' ? 'live' : ''}`} type="button" onClick={() => updateStatus(tryout.id, tryout.status === 'Confirmada' ? 'Agendada' : 'Confirmada')}>
-                    {tryout.status}
-                  </button>
-                  <button
-                    className="button minimal danger"
-                    type="button"
-                    onClick={() => {
-                      setTryouts(tryouts.filter((item) => item.id !== tryout.id));
-                      notify('Teste removido.');
-                    }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div className="tryout-actions">
+                    <button className={`status ${tryout.status === 'Confirmada' ? 'live' : ''}`} type="button" onClick={() => updateStatus(tryout.id, tryout.status === 'Confirmada' ? 'Agendada' : 'Confirmada')}>
+                      {tryout.status}
+                    </button>
+                    <button
+                      className="button minimal danger"
+                      type="button"
+                      onClick={() => removeTryout(tryout.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
             {tryouts.length === 0 && <div className="empty-state">Nenhum teste agendado ainda.</div>}
@@ -3115,7 +3077,7 @@ function ChampionshipModal({ championship, saving, onClose, onSave }) {
   );
 }
 
-function AdminPanel({ user, users, players, setPlayers, matches, saveMatch, setUserRole, createPlayer, removePlayer, notify }) {
+function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, createPlayer, removePlayer, notify }) {
   const [newMatch, setNewMatch] = useState({
     away: '',
     date: toDateKey(new Date()),
@@ -3462,7 +3424,7 @@ function readAppSettings() {
   }
 }
 
-function SettingsPage({ user, users, setUsers, notify, notificationPreferences, saveNotificationPreferences }) {
+function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences }) {
   const [settings, setSettings] = useState(readAppSettings);
   const isFounder = user.staffRole === 'Fundador';
   const canManagePermissions = isFounder || (user.role === 'admin' && settings.permissions.admin.managePermissions);
@@ -3497,7 +3459,7 @@ function SettingsPage({ user, users, setUsers, notify, notificationPreferences, 
     });
   };
 
-  const updateUserRole = (account, nextStaffRole) => {
+  const updateUserRole = async (account, nextStaffRole) => {
     if (!canManagePermissions) {
       notify('Voce nao tem permissao para alterar cargos.');
       return;
@@ -3510,32 +3472,36 @@ function SettingsPage({ user, users, setUsers, notify, notificationPreferences, 
     }
 
     const nextRole = nextStaffRole === 'Jogador' ? 'player' : 'admin';
-    setUsers(
-      users.map((item) =>
-        item.id === account.id
-          ? { ...item, role: nextRole, staffRole: nextStaffRole }
-          : item,
-      ),
-    );
-    notify(`${account.nickname} agora e ${nextStaffRole}.`);
+    try {
+      const updated = await setUserRole(account, nextRole);
+      setUsers(
+        users.map((item) =>
+          item.id === account.id
+            ? { ...item, role: updated.role, staffRole: updated.staffRole, backendId: updated.id }
+            : item,
+        ),
+      );
+      notify(`${account.nickname} agora e ${updated.staffRole || roleLabel(updated.role)}.`);
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel alterar o cargo.');
+    }
   };
-
-  if (user.role !== 'admin') {
-    return (
-      <section>
-        <SectionHeader eyebrow="Configuracoes" title="Acesso restrito" />
-        <div className="panel">
-          <ShieldCheck size={24} />
-          <h3>Somente administradores</h3>
-          <p>Seu perfil nao possui permissao para acessar configuracoes administrativas.</p>
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section className="settings-page">
       <SectionHeader eyebrow="Preferencias" title="Configuracoes" />
+
+      <SettingsGroup title="Conta">
+        <div className="panel settings-account-card">
+          <div className="avatar small">{getInitials(user.nickname || user.name)}</div>
+          <div className="settings-account-copy">
+            <strong>{user.name || user.nickname || 'Usuario TorinnoFC'}</strong>
+            <span>{user.email}</span>
+          </div>
+          <span className={`role-badge ${user.role === 'admin' ? 'admin' : 'player'}`}>{user.staffRole || roleLabel(user.role)}</span>
+        </div>
+        <PasswordChangeCard notify={notify} />
+      </SettingsGroup>
 
       <SettingsGroup title="Geral">
         <SettingsItem title="Tema escuro" checked={settings.appearance.darkTheme} onChange={() => updateSetting('appearance', 'darkTheme')} />
@@ -3560,60 +3526,115 @@ function SettingsPage({ user, users, setUsers, notify, notificationPreferences, 
         )}
       </SettingsGroup>
 
-      <SettingsGroup title="Permissoes">
-        {!canManagePermissions && <div className="settings-warning">Apenas Fundador ou Administrador autorizado pode alterar permissoes.</div>}
-        <div className="permission-grid">
-          <PermissionCard
-            title="Fundador"
-            description="Acesso total"
-            fixed
-          />
-          <PermissionCard
-            title="Admin"
-            permissions={settings.permissions.admin}
-            labels={{
-              createMatch: 'Criar partida',
-              editMatch: 'Editar partida',
-              createPlayer: 'Cadastrar jogador',
-              managePermissions: 'Permissoes',
-            }}
-            disabled={!canManagePermissions}
-            onToggle={(key) => updatePermission('admin', key)}
-          />
-          <PermissionCard
-            title="Jogador"
-            permissions={settings.permissions.player}
-            labels={{
-              viewCalendar: 'Calendario',
-              viewMatches: 'Partidas',
-              editOwnPerformance: 'Desempenho',
-            }}
-            disabled={!canManagePermissions}
-            onToggle={(key) => updatePermission('player', key)}
-          />
-        </div>
-      </SettingsGroup>
+      {user.role === 'admin' && (
+        <>
+          <SettingsGroup title="Permissoes">
+            {!canManagePermissions && <div className="settings-warning">Apenas Fundador ou Administrador autorizado pode alterar permissoes.</div>}
+            <div className="permission-grid">
+              <PermissionCard
+                title="Fundador"
+                description="Acesso total"
+                fixed
+              />
+              <PermissionCard
+                title="Admin"
+                permissions={settings.permissions.admin}
+                labels={{
+                  createMatch: 'Criar partida',
+                  editMatch: 'Editar partida',
+                  createPlayer: 'Cadastrar jogador',
+                  managePermissions: 'Permissoes',
+                }}
+                disabled={!canManagePermissions}
+                onToggle={(key) => updatePermission('admin', key)}
+              />
+              <PermissionCard
+                title="Jogador"
+                permissions={settings.permissions.player}
+                labels={{
+                  viewCalendar: 'Calendario',
+                  viewMatches: 'Partidas',
+                  editOwnPerformance: 'Desempenho',
+                }}
+                disabled={!canManagePermissions}
+                onToggle={(key) => updatePermission('player', key)}
+              />
+            </div>
+          </SettingsGroup>
 
-      <SettingsGroup title="Cargos">
-        <div className="user-role-list">
-          {users.map((account) => (
-            <UserRoleRow
-              account={account}
-              key={account.id}
-              disabled={!canManagePermissions}
-              onChange={(nextRole) => updateUserRole(account, nextRole)}
-            />
-          ))}
-        </div>
-      </SettingsGroup>
+          <SettingsGroup title="Cargos">
+            <div className="user-role-list">
+              {users.map((account) => (
+                <UserRoleRow
+                  account={account}
+                  key={account.id}
+                  disabled={!canManagePermissions}
+                  onChange={(nextRole) => updateUserRole(account, nextRole)}
+                />
+              ))}
+            </div>
+          </SettingsGroup>
 
-      <SettingsGroup title="Regras">
-        <SettingsItem title="Admin cria partidas" checked={settings.matches.adminsCreateMatches} onChange={() => updateSetting('matches', 'adminsCreateMatches')} />
-        <SettingsItem title="Agenda para jogadores" checked={settings.matches.playersSeeFutureMatches} onChange={() => updateSetting('matches', 'playersSeeFutureMatches')} />
-        <SettingsItem title="Cadastro por admin" checked={settings.players.adminsCreatePlayers} onChange={() => updateSetting('players', 'adminsCreatePlayers')} />
-        <SettingsItem title="Jogador edita perfil" checked={settings.players.playersEditOwnProfile} onChange={() => updateSetting('players', 'playersEditOwnProfile')} />
-      </SettingsGroup>
+          <SettingsGroup title="Regras">
+            <SettingsItem title="Admin cria partidas" checked={settings.matches.adminsCreateMatches} onChange={() => updateSetting('matches', 'adminsCreateMatches')} />
+            <SettingsItem title="Agenda para jogadores" checked={settings.matches.playersSeeFutureMatches} onChange={() => updateSetting('matches', 'playersSeeFutureMatches')} />
+            <SettingsItem title="Cadastro por admin" checked={settings.players.adminsCreatePlayers} onChange={() => updateSetting('players', 'adminsCreatePlayers')} />
+            <SettingsItem title="Jogador edita perfil" checked={settings.players.playersEditOwnProfile} onChange={() => updateSetting('players', 'playersEditOwnProfile')} />
+          </SettingsGroup>
+        </>
+      )}
     </section>
+  );
+}
+
+function PasswordChangeCard({ notify }) {
+  const [form, setForm] = useState({ password: '', confirm: '' });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!hasSupabaseConfig) {
+      notify('Troca de senha exige Supabase configurado.');
+      return;
+    }
+    if (form.password.length < 6) {
+      notify('A nova senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (form.password !== form.confirm) {
+      notify('As senhas nao conferem.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: form.password });
+      if (error) {
+        notify('Nao foi possivel trocar a senha.');
+        return;
+      }
+      setForm({ password: '', confirm: '' });
+      notify('Senha atualizada.');
+    } catch {
+      notify('Nao foi possivel trocar a senha.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form className="panel settings-password-form" onSubmit={submit}>
+      <div className="settings-password-copy">
+        <strong>Trocar senha</strong>
+        <span>Use uma senha com pelo menos 6 caracteres.</span>
+      </div>
+      <Field label="Nova senha" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
+      <Field label="Confirmar senha" type="password" value={form.confirm} onChange={(confirm) => setForm({ ...form, confirm })} />
+      <button className="button primary" type="submit" disabled={saving}>
+        <Save size={16} />
+        {saving ? 'Salvando...' : 'Salvar senha'}
+      </button>
+    </form>
   );
 }
 

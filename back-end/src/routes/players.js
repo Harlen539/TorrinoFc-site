@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer } from '../lib/serializers.js';
-import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
+import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
 
 export const playersRouter = Router();
@@ -65,7 +65,7 @@ playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
   response.json({ players: players.map(serializePlayer) });
 }));
 
-playersRouter.post('/api/players', requireAdminApiKey, asyncRoute(async (request, response) => {
+playersRouter.post('/api/players', requireAdminUser, asyncRoute(async (request, response) => {
   const data = makePlayerData(request.body);
   if (!data.fullName || !data.nickname) {
     response.status(400).json({ error: 'Nome e apelido sao obrigatorios.' });
@@ -83,7 +83,7 @@ playersRouter.post('/api/players', requireAdminApiKey, asyncRoute(async (request
   response.status(201).json({ player: serializePlayer(player) });
 }));
 
-playersRouter.put('/api/players/:id', requireAdminApiKey, asyncRoute(async (request, response) => {
+playersRouter.put('/api/players/:id', requireAdminUser, asyncRoute(async (request, response) => {
   const player = await prisma.playerProfile.update({
     where: { id: request.params.id },
     data: { ...makePlayerData(request.body), updatedAt: new Date() },
@@ -93,7 +93,7 @@ playersRouter.put('/api/players/:id', requireAdminApiKey, asyncRoute(async (requ
   response.json({ player: serializePlayer(player) });
 }));
 
-playersRouter.put('/api/players/:id/stats', requireAdminApiKey, asyncRoute(async (request, response) => {
+playersRouter.put('/api/players/:id/stats', requireAdminUser, asyncRoute(async (request, response) => {
   const player = await prisma.playerProfile.findUnique({ where: { id: request.params.id } });
   if (!player) {
     response.status(404).json({ error: 'Jogador nao encontrado.' });
@@ -121,7 +121,7 @@ playersRouter.put('/api/players/:id/stats', requireAdminApiKey, asyncRoute(async
   response.json({ player: serializePlayer(updated) });
 }));
 
-playersRouter.delete('/api/players/:id', requireAdminApiKey, asyncRoute(async (request, response) => {
+playersRouter.delete('/api/players/:id', requireAdminUser, asyncRoute(async (request, response) => {
   await prisma.playerProfile.update({
     where: { id: request.params.id },
     data: { status: 'Removido', updatedAt: new Date() },

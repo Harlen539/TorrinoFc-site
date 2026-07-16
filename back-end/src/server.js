@@ -9,6 +9,7 @@ import { championshipsRouter } from './routes/championships.js';
 import { matchesRouter } from './routes/matches.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { playersRouter } from './routes/players.js';
+import { tryoutsRouter } from './routes/tryouts.js';
 import { usersRouter } from './routes/users.js';
 import { startReminderScheduler } from './services/reminderScheduler.js';
 
@@ -27,7 +28,7 @@ app.use(cors({
     callback(new Error('Origem nao autorizada pelo CORS.'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-admin-api-key'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'x-admin-api-key', 'x-user-email'],
   maxAge: 600,
   optionsSuccessStatus: 204,
 }));
@@ -44,6 +45,7 @@ app.use(matchesRouter);
 app.use(championshipsRouter);
 app.use(usersRouter);
 app.use(notificationsRouter);
+app.use(tryoutsRouter);
 app.use(playersRouter);
 
 app.use((error, _request, response, _next) => {

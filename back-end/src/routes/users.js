@@ -3,7 +3,7 @@ import { isValidEmail, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeUserProfile } from '../lib/serializers.js';
-import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
+import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
 import { notifyMemberJoined, notifyRoleUpdated } from '../services/notificationService.js';
 
 export const usersRouter = Router();
@@ -12,7 +12,11 @@ const asyncRoute = (handler) => (request, response, next) => {
   Promise.resolve(handler(request, response, next)).catch(next);
 };
 
-usersRouter.get('/api/users', requireAdminApiKey, asyncRoute(async (_request, response) => {
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+usersRouter.get('/api/users', asyncRoute(async (_request, response) => {
   const users = await prisma.userProfile.findMany({
     orderBy: [{ role: 'asc' }, { joinedAt: 'desc' }],
   });
@@ -20,7 +24,7 @@ usersRouter.get('/api/users', requireAdminApiKey, asyncRoute(async (_request, re
   response.json({ users: users.map(serializeUserProfile) });
 }));
 
-usersRouter.post('/api/users/sync', requireAdminApiKey, asyncRoute(async (request, response) => {
+usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
   const email = String(request.body.email || '').trim().toLowerCase();
   const errors = [];
 
@@ -40,6 +44,8 @@ usersRouter.post('/api/users/sync', requireAdminApiKey, asyncRoute(async (reques
     accountStatus: sanitizeText(request.body.accountStatus, { maxLength: 32, fallback: 'active' }),
     updatedAt: new Date(),
   };
+  const requestedId = isUuid(request.body.id) ? request.body.id : undefined;
+  const role = request.body.role === 'admin' ? 'admin' : 'player';
 
   const profile = existing
     ? await prisma.userProfile.update({
@@ -48,9 +54,11 @@ usersRouter.post('/api/users/sync', requireAdminApiKey, asyncRoute(async (reques
     })
     : await prisma.userProfile.create({
       data: {
+        ...(requestedId ? { id: requestedId } : {}),
         ...data,
         email,
-        role: request.body.role === 'admin' ? 'admin' : 'player',
+        role,
+        staffRole: data.staffRole || (role === 'admin' ? 'Admin' : 'Jogador'),
       },
     });
 
@@ -61,7 +69,7 @@ usersRouter.post('/api/users/sync', requireAdminApiKey, asyncRoute(async (reques
   response.status(201).json({ user: serializeUserProfile(profile) });
 }));
 
-usersRouter.patch('/api/users/:id/role', requireAdminApiKey, asyncRoute(async (request, response) => {
+usersRouter.patch('/api/users/:id/role', requireAdminUser, asyncRoute(async (request, response) => {
   const nextRole = request.body.role === 'admin' ? 'admin' : 'player';
   const target = await prisma.userProfile.findUnique({ where: { id: request.params.id } });
 
@@ -82,13 +90,14 @@ usersRouter.patch('/api/users/:id/role', requireAdminApiKey, asyncRoute(async (r
     where: { id: request.params.id },
     data: {
       role: nextRole,
-      staffRole: nextRole === 'admin' ? 'Admin' : 'Membro',
+      staffRole: nextRole === 'admin' ? 'Admin' : 'Jogador',
       updatedAt: new Date(),
     },
   });
 
   await prisma.adminAuditLog.create({
     data: {
+      actorId: request.userProfile?.id || null,
       targetId: target.id,
       action: nextRole === 'admin' ? 'promote_admin' : 'remove_admin',
       beforeValue: { role: target.role, staffRole: target.staffRole },
