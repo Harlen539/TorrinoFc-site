@@ -34,6 +34,15 @@ export const env = {
   notifications: {
     reminderSchedulerEnabled: process.env.ENABLE_REMINDER_SCHEDULER === 'true',
   },
+  email: {
+    smtpHost: process.env.SMTP_HOST || '',
+    smtpPort: Number(process.env.SMTP_PORT || 587),
+    smtpSecure: process.env.SMTP_SECURE === 'true',
+    smtpUser: process.env.SMTP_USER || '',
+    smtpPass: process.env.SMTP_PASS || '',
+    fromName: process.env.EMAIL_FROM_NAME || 'Torinno FC',
+    fromAddress: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || '',
+  },
 };
 
 export function assertBackendConfig() {

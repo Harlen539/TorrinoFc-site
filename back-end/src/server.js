@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import { env } from './config/env.js';
+import { adminEmailRouter } from './routes/adminEmail.js';
 import { adminMatchesRouter } from './routes/adminMatches.js';
 import { adminTryoutsRouter } from './routes/adminTryouts.js';
 import { championshipsRouter } from './routes/championships.js';
@@ -38,6 +39,7 @@ app.get('/health', (_request, response) => {
 
 app.use(adminMatchesRouter);
 app.use(adminTryoutsRouter);
+app.use(adminEmailRouter);
 app.use(matchesRouter);
 app.use(championshipsRouter);
 app.use(usersRouter);
