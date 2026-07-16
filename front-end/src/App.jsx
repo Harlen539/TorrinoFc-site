@@ -714,6 +714,7 @@ function App() {
           email,
           password: form.password,
           options: {
+            emailRedirectTo: window.location.origin,
             data: {
               name: form.name.trim(),
               nickname: form.nickname.trim(),
@@ -728,7 +729,7 @@ function App() {
         }
 
         if (!data.session) {
-          return { error: 'Cadastro criado. Confirme seu e-mail antes de entrar na plataforma.' };
+          return { info: 'Cadastro criado. O Supabase envia um link de confirmacao para o e-mail. Confira a caixa de entrada e o spam antes de entrar.' };
         }
       }
 
@@ -1089,6 +1090,11 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setInfo('');
       return;
     }
+    if (result?.info) {
+      setError('');
+      setInfo(result.info);
+      return;
+    }
 
     setError('');
     setInfo('');
@@ -1125,13 +1131,19 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Reenvio de confirmacao exige Supabase configurado.');
       return;
     }
-    const { error: resendError } = await supabase.auth.resend({ type: 'signup', email });
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
     if (resendError) {
-      setError('Nao foi possivel reenviar a confirmacao.');
+      setError('Nao foi possivel reenviar a confirmacao agora. Aguarde um pouco e tente novamente.');
       return;
     }
     setError('');
-    setInfo('Se houver uma conta pendente, a confirmacao sera reenviada.');
+    setInfo('Se houver uma conta pendente, o link de confirmacao sera reenviado. Confira tambem a caixa de spam.');
   };
 
   return (
