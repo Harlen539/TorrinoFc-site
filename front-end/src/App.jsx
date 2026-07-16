@@ -757,11 +757,25 @@ function App() {
           return { error: 'Nao foi possivel criar a conta. Verifique o e-mail e tente novamente.' };
         }
 
-        if (!data.session) {
-          return {
-            info: 'Cadastro criado. Digite o codigo enviado pelo Supabase para confirmar sua conta. Se chegar um link, ele tambem confirma o acesso.',
-            otpEmail: email,
-          };
+        if (data.user) {
+          const metadata = data.user.user_metadata || {};
+          const user = normalizeUser({
+            id: data.user.id,
+            name: metadata.name || form.name.trim(),
+            nickname: metadata.nickname || form.nickname.trim(),
+            email,
+            password: form.password,
+            role: email.includes('admin') ? 'admin' : 'player',
+            staffRole: email.includes('admin') ? 'Admin' : 'Jogador',
+            position: metadata.position || form.position,
+            shirt: metadata.shirt || form.shirt,
+          });
+
+          setUsers((items) => [...items, user]);
+          setSession(publicUser(user));
+          setView('dashboard');
+          apiSyncUser(user).catch(() => {});
+          return { ok: true };
         }
       }
 
@@ -789,10 +803,6 @@ function App() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: form.password });
       if (error || !data.user) {
         return { error: 'E-mail ou senha incorretos.' };
-      }
-      if (!data.user.email_confirmed_at) {
-        await supabase.auth.signOut();
-        return { error: 'Confirme seu e-mail antes de acessar a plataforma.' };
       }
 
       return completeSupabaseAuth(data.user);
@@ -924,7 +934,7 @@ function App() {
 
   if (!session) {
     if (view === 'auth') {
-      return <AuthScreen mode={authMode} setMode={setAuthMode} onAuth={handleAuth} onOtpVerified={completeSupabaseAuth} onBack={() => setView('landing')} />;
+      return <AuthScreen mode={authMode} setMode={setAuthMode} onAuth={handleAuth} onBack={() => setView('landing')} />;
     }
 
     return (
@@ -1063,7 +1073,7 @@ function Landing({ onLogin, onRegister }) {
   );
 }
 
-function AuthScreen({ mode, setMode, onAuth, onOtpVerified, onBack }) {
+function AuthScreen({ mode, setMode, onAuth, onBack }) {
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -1074,8 +1084,6 @@ function AuthScreen({ mode, setMode, onAuth, onOtpVerified, onBack }) {
     shirt: '10',
     website: '',
   });
-  const [otpCode, setOtpCode] = useState('');
-  const [otpEmail, setOtpEmail] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
@@ -1110,75 +1118,9 @@ function AuthScreen({ mode, setMode, onAuth, onOtpVerified, onBack }) {
     if (result?.info) {
       setError('');
       setInfo(result.info);
-      if (result.otpEmail) {
-        setOtpEmail(result.otpEmail);
-      }
       return;
     }
 
-    setError('');
-    setInfo('');
-  };
-
-  const sendLoginCode = async () => {
-    const email = normalizeEmail(form.email);
-    if (!isValidEmail(email)) {
-      setError('Digite um e-mail valido para receber o codigo.');
-      return;
-    }
-    if (!hasSupabaseConfig) {
-      setError('Envio de codigo exige Supabase configurado.');
-      return;
-    }
-
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: window.location.origin,
-      },
-    });
-
-    if (otpError) {
-      setError('Nao foi possivel enviar o codigo. Verifique se a conta ja existe e tente novamente.');
-      setInfo('');
-      return;
-    }
-
-    setOtpEmail(email);
-    setError('');
-    setInfo('Codigo enviado. Confira sua caixa de entrada e spam, digite o codigo abaixo e confirme.');
-  };
-
-  const verifyEmailCode = async () => {
-    const email = normalizeEmail(otpEmail || form.email);
-    const token = otpCode.trim().replace(/\s+/g, '');
-
-    if (!isValidEmail(email)) {
-      setError('Digite um e-mail valido para confirmar o codigo.');
-      return;
-    }
-    if (!token || token.length < 4) {
-      setError('Digite o codigo recebido por e-mail.');
-      return;
-    }
-    if (!hasSupabaseConfig) {
-      setError('Confirmacao por codigo exige Supabase configurado.');
-      return;
-    }
-
-    let result = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-    if (result.error) {
-      result = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
-    }
-
-    if (result.error || !result.data?.user) {
-      setError('Codigo invalido ou expirado. Solicite um novo codigo e tente novamente.');
-      setInfo('');
-      return;
-    }
-
-    await onOtpVerified(result.data.user);
     setError('');
     setInfo('');
   };
@@ -1202,31 +1144,6 @@ function AuthScreen({ mode, setMode, onAuth, onOtpVerified, onBack }) {
     }
     setError('');
     setInfo('Se o e-mail estiver cadastrado, enviaremos um link de recuperacao.');
-  };
-
-  const resendConfirmation = async () => {
-    const email = normalizeEmail(form.email);
-    if (!isValidEmail(email)) {
-      setError('Digite um e-mail valido para reenviar a confirmacao.');
-      return;
-    }
-    if (!hasSupabaseConfig) {
-      setError('Reenvio de confirmacao exige Supabase configurado.');
-      return;
-    }
-    const { error: resendError } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    if (resendError) {
-      setError('Nao foi possivel reenviar a confirmacao agora. Aguarde um pouco e tente novamente.');
-      return;
-    }
-    setError('');
-    setInfo('Se houver uma conta pendente, o link de confirmacao sera reenviado. Confira tambem a caixa de spam.');
   };
 
   return (
@@ -1297,27 +1214,13 @@ function AuthScreen({ mode, setMode, onAuth, onOtpVerified, onBack }) {
           )}
           {error && <p className="form-error">{error}</p>}
           {info && <p className="form-info">{info}</p>}
-          {otpEmail && (
-            <div className="otp-panel">
-              <Field label={`Codigo enviado para ${otpEmail}`} value={otpCode} onChange={setOtpCode} />
-              <button className="button primary full" type="button" onClick={verifyEmailCode}>
-                Confirmar codigo
-              </button>
-            </div>
-          )}
           <button className="button primary full" type="submit">
             {isRegister ? 'Criar conta' : 'Entrar'}
             <ChevronRight size={18} />
           </button>
           <div className="auth-help-actions">
-            <button className="button minimal" type="button" onClick={sendLoginCode}>
-              Enviar codigo
-            </button>
             <button className="button minimal" type="button" onClick={sendPasswordReset}>
               Recuperar senha
-            </button>
-            <button className="button minimal" type="button" onClick={resendConfirmation}>
-              Reenviar confirmacao
             </button>
           </div>
         </form>
