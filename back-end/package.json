@@ -8,7 +8,7 @@
     "render:build": "npm install && npm run db:generate",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/prisma.js && node --check src/lib/dateInput.js && node --check src/lib/sanitizeInput.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js",
+    "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/prisma.js && node --check src/lib/dateInput.js && node --check src/lib/sanitizeInput.js && node --check src/lib/httpValidation.js && node --check src/lib/serializers.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/services/notificationService.js && node --check src/services/reminderScheduler.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js && node --check src/routes/matches.js && node --check src/routes/championships.js && node --check src/routes/users.js && node --check src/routes/notifications.js && node --check src/routes/players.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

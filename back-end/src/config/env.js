@@ -4,10 +4,14 @@ dotenv.config();
 
 export const env = {
   port: Number(process.env.PORT || 4000),
-  corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  corsOrigins: [
+    ...(process.env.CORS_ORIGIN || 'http://localhost:5173')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ].filter((origin, index, items) => items.indexOf(origin) === index),
   adminApiKey: process.env.ADMIN_API_KEY || '',
   databaseUrl: process.env.DATABASE_URL || '',
   supabase: {
@@ -26,6 +30,9 @@ export const env = {
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
+  },
+  notifications: {
+    reminderSchedulerEnabled: process.env.ENABLE_REMINDER_SCHEDULER === 'true',
   },
 };
 

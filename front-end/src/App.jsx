@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Crown,
   Edit3,
   Eye,
@@ -31,6 +32,30 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { hasSupabaseConfig, supabase } from './lib/supabaseClient.js';
+import {
+  createChampionship as apiCreateChampionship,
+  createMatch as apiCreateMatch,
+  createPlayer as apiCreatePlayer,
+  deleteChampionship as apiDeleteChampionship,
+  deleteMatch as apiDeleteMatch,
+  deleteNotification as apiDeleteNotification,
+  deletePlayer as apiDeletePlayer,
+  fetchChampionships,
+  fetchMatches,
+  fetchNotificationPreferences,
+  fetchNotifications,
+  markAllNotificationsRead as apiMarkAllNotificationsRead,
+  markNotificationRead as apiMarkNotificationRead,
+  fetchPlayers,
+  fetchUsers,
+  syncUser as apiSyncUser,
+  updateChampionship as apiUpdateChampionship,
+  updateMatch as apiUpdateMatch,
+  updateNotificationPreferences,
+  updatePlayerStats as apiUpdatePlayerStats,
+  updateUserRole as apiUpdateUserRole,
+} from './lib/api.js';
 
 const logo = '/assets/logo-torrino.png';
 const banner = '/assets/banner-torrino.png';
@@ -38,169 +63,13 @@ const WHATSAPP_GROUP_INVITE_URL = 'https://chat.whatsapp.com/H9xNmzvwgAbAJXd65BN
 const ADMIN_API_URL = import.meta.env.VITE_ADMIN_API_URL || '';
 const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || '';
 
-const initialPlayers = [
-  {
-    id: 1,
-    userId: 'u-kilderyyy',
-    fullName: 'Dalton Kylderi Bernardo Batista',
-    nickname: 'Kilderyyy35',
-    position: 'Meio-campo',
-    shirt: 10,
-    foot: 'Direito',
-    status: 'Ativo',
-    role: 'Capitao',
-    avatar: 'DK',
-    bio: 'Meia criativo, intensidade alta e leitura rapida entre linhas.',
-    stats: { goals: 18, assists: 14, recoveries: 42, matches: 24, wins: 17, losses: 5, rating: 9.1 },
-  },
-  {
-    id: 2,
-    userId: 'u-rafa',
-    fullName: 'Rafael Torres',
-    nickname: 'Rafa9',
-    position: 'Atacante',
-    shirt: 9,
-    foot: 'Esquerdo',
-    status: 'Ativo',
-    role: 'Artilheiro',
-    avatar: 'RT',
-    bio: 'Finalizador de area, pressao no primeiro passe e decisao rapida.',
-    stats: { goals: 24, assists: 7, recoveries: 19, matches: 21, wins: 15, losses: 4, rating: 8.8 },
-  },
-  {
-    id: 3,
-    userId: 'u-matheus',
-    fullName: 'Matheus Lima',
-    nickname: 'M.Lima',
-    position: 'Goleiro',
-    shirt: 1,
-    foot: 'Direito',
-    status: 'Ativo',
-    role: 'Muralha',
-    avatar: 'ML',
-    bio: 'Goleiro seguro, boa saida curta e reflexo em finalizacoes proximas.',
-    stats: { goals: 0, assists: 2, recoveries: 8, matches: 22, wins: 16, losses: 4, rating: 8.6 },
-  },
-  {
-    id: 4,
-    userId: 'u-joao',
-    fullName: 'Joao Henrique',
-    nickname: 'JH5',
-    position: 'Volante',
-    shirt: 5,
-    foot: 'Direito',
-    status: 'Reserva',
-    role: 'Motor',
-    avatar: 'JH',
-    bio: 'Volante de combate, protege a defesa e acelera transicoes.',
-    stats: { goals: 5, assists: 9, recoveries: 55, matches: 20, wins: 13, losses: 5, rating: 8.4 },
-  },
-];
+const initialPlayers = [];
 
-const initialUsers = [
-  {
-    id: 'u-kilderyyy',
-    name: 'Dalton Kylderi Bernardo Batista',
-    nickname: 'Kilderyyy35',
-    email: 'kilderyyy@torinnofc.gg',
-    password: 'torinnofc123',
-    role: 'admin',
-    staffRole: 'Fundador',
-    position: 'Meio-campo',
-    shirt: '10',
-    playerId: 1,
-  },
-  {
-    id: 'u-rafa',
-    name: 'Rafael Torres',
-    nickname: 'Rafa9',
-    email: 'rafa@torinnofc.gg',
-    password: 'torinnofc123',
-    role: 'admin',
-    staffRole: 'Diretor',
-    position: 'Atacante',
-    shirt: '9',
-    playerId: 2,
-  },
-  {
-    id: 'u-matheus',
-    name: 'Matheus Lima',
-    nickname: 'M.Lima',
-    email: 'matheus@torinnofc.gg',
-    password: 'torinnofc123',
-    role: 'player',
-    staffRole: 'Goleiro titular',
-    position: 'Goleiro',
-    shirt: '1',
-    playerId: 3,
-  },
-  {
-    id: 'u-joao',
-    name: 'Joao Henrique',
-    nickname: 'JH5',
-    email: 'joao@torinnofc.gg',
-    password: 'torinnofc123',
-    role: 'player',
-    staffRole: 'Capitao de lobby',
-    position: 'Volante',
-    shirt: '5',
-    playerId: 4,
-  },
-];
+const initialUsers = [];
 
-const initialMatches = [
-  {
-    id: 1,
-    home: 'TorinnoFC',
-    away: 'Vikings FC',
-    date: 'Hoje',
-    time: '20:30',
-    place: 'Arena Society Norte',
-    championship: 'Liga Premium',
-    status: 'Agendada',
-    score: '-',
-    dateKey: toDateKey(new Date()),
-  },
-  {
-    id: 2,
-    home: 'TorinnoFC',
-    away: 'Apollo Digital',
-    date: 'Amanha',
-    time: '21:00',
-    place: 'Campo Central',
-    championship: 'Copa Digital',
-    status: 'Em andamento',
-    score: '1 x 1',
-    dateKey: toDateKey(addDays(new Date(), 1)),
-  },
-  {
-    id: 3,
-    home: 'TorinnoFC',
-    away: 'Uniao FC',
-    date: 'Domingo',
-    time: '18:00',
-    place: 'Arena Horizonte',
-    championship: 'Amistoso',
-    status: 'Agendada',
-    score: '-',
-    dateKey: toDateKey(addDays(new Date(), 5)),
-  },
-];
+const initialMatches = [];
 
-const initialTryouts = [
-  {
-    id: 1,
-    fullName: 'Kilderyyy35',
-    age: 87,
-    position: 'Atacante',
-    contact: 'Discord: torinnofc#2026',
-    date: toDateKey(addDays(new Date(), 2)),
-    time: '18:30',
-    place: 'EA FC 26 | Clubs',
-    notes: 'Teste em lobby privado. Entrar 10 min antes e usar headset.',
-    status: 'Agendada',
-  },
-];
+const initialTryouts = [];
 
 const navItems = [
   { id: 'dashboard', label: 'Painel', icon: Home },
@@ -210,6 +79,7 @@ const navItems = [
   { id: 'tryouts', label: 'Peneiras', icon: UserPlus },
   { id: 'matches', label: 'Partidas', icon: Flag },
   { id: 'calendar', label: 'Calendario', icon: CalendarDays },
+  { id: 'notifications', label: 'Notificacoes', icon: Bell },
   { id: 'ranking', label: 'Ranking', icon: Trophy },
   { id: 'team', label: 'Time', icon: Shield },
   { id: 'championships', label: 'Campeonatos', icon: Crown },
@@ -416,14 +286,41 @@ async function notifyTryoutCreated(tryout, notify) {
 }
 
 function openWhatsAppGroupWithMessage(message, notify) {
-  const tab = window.open(WHATSAPP_GROUP_INVITE_URL, '_blank', 'noopener,noreferrer');
+  openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, message, notify);
+}
+
+function openWhatsAppWithPreparedMessage(whatsappUrl, message, notify) {
+  const targetUrl = buildWhatsAppUrlWithMessage(whatsappUrl || WHATSAPP_GROUP_INVITE_URL, message);
+  const tab = window.open(targetUrl, '_blank', 'noopener,noreferrer');
 
   copyTextToClipboard(message)
-    .then(() => notify('Mensagem copiada. Cole no grupo do WhatsApp aberto.'))
-    .catch(() => notify('Grupo aberto. Copie a mensagem do agendamento manualmente.'));
+    .then(() => notify('Mensagem pronta copiada. Cole no WhatsApp aberto.'))
+    .catch(() => notify('WhatsApp aberto. Copie a mensagem do agendamento manualmente.'));
 
   if (!tab) {
-    window.location.href = WHATSAPP_GROUP_INVITE_URL;
+    window.location.href = targetUrl;
+  }
+}
+
+function buildWhatsAppUrlWithMessage(url, message) {
+  if (!url) {
+    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    if (host === 'wa.me') {
+      parsed.searchParams.set('text', message);
+      return parsed.toString();
+    }
+    if (host === 'api.whatsapp.com' || host === 'web.whatsapp.com') {
+      parsed.searchParams.set('text', message);
+      return parsed.toString();
+    }
+    return parsed.toString();
+  } catch {
+    return `https://wa.me/?text=${encodeURIComponent(message)}`;
   }
 }
 
@@ -500,41 +397,15 @@ function readStorageList(key, fallback) {
 }
 
 function readSavedUsers() {
-  const saved = readStorageList('torinnofc-users', initialUsers);
-  const merged = [...initialUsers];
-
-  saved.forEach((user) => {
-    if (!user?.email) return;
-    const index = merged.findIndex((item) => item.email.toLowerCase() === user.email.toLowerCase());
-    if (index >= 0) {
-      merged[index] = normalizeUser({ ...merged[index], ...user });
-    } else {
-      merged.push(normalizeUser(user));
-    }
-  });
-
-  return merged;
+  return initialUsers;
 }
 
 function readSavedPlayers() {
-  const saved = readStorageList('torinnofc-players', initialPlayers);
-  const merged = [...initialPlayers];
-
-  saved.forEach((player) => {
-    if (!player?.id) return;
-    const index = merged.findIndex((item) => item.id === player.id);
-    if (index >= 0) {
-      merged[index] = normalizePlayer({ ...merged[index], ...player });
-    } else {
-      merged.push(normalizePlayer(player));
-    }
-  });
-
-  return merged;
+  return initialPlayers;
 }
 
 function readSavedMatches() {
-  return readStorageList('torinnofc-matches', initialMatches).map(normalizeMatchEvent);
+  return initialMatches.map(normalizeMatchEvent);
 }
 
 function readSavedSession(users = readSavedUsers()) {
@@ -566,7 +437,9 @@ function readSavedTryouts() {
     }
 
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.map(normalizeTryout) : initialTryouts;
+    return Array.isArray(parsed)
+      ? parsed.map(normalizeTryout).filter((tryout) => tryout.fullName !== 'Kilderyyy35')
+      : initialTryouts;
   } catch {
     localStorage.removeItem('torinnofc-tryouts');
     return initialTryouts;
@@ -657,7 +530,7 @@ function createPlayerFromUser(user) {
 }
 
 function findPlayerForUser(user, players) {
-  return players.find((player) => player.userId === user.id || player.id === user.playerId) || players[0];
+  return players.find((player) => player.userId === user.id || player.id === user.playerId) || null;
 }
 
 function App() {
@@ -668,6 +541,10 @@ function App() {
   const [view, setView] = useState(session ? 'dashboard' : 'landing');
   const [players, setPlayers] = useState(readSavedPlayers);
   const [matches, setMatches] = useState(readSavedMatches);
+  const [championships, setChampionships] = useState([]);
+  const [serverState, setServerState] = useState({ loading: true, error: '' });
+  const [notificationsState, setNotificationsState] = useState({ loading: false, error: '', items: [], unreadCount: 0 });
+  const [notificationPreferences, setNotificationPreferences] = useState(null);
   const [tryouts, setTryouts] = useState(readSavedTryouts);
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
@@ -696,8 +573,49 @@ function App() {
   }, [players]);
 
   useEffect(() => {
-    localStorage.setItem('torinnofc-matches', JSON.stringify(matches));
-  }, [matches]);
+    let active = true;
+
+    const loadServerData = async ({ silent = false } = {}) => {
+      if (!silent) {
+        setServerState({ loading: true, error: '' });
+      }
+
+      try {
+        const [nextMatches, nextChampionships, nextPlayers, nextUsers] = await Promise.all([
+          fetchMatches(),
+          fetchChampionships(),
+          fetchPlayers(),
+          fetchUsers().catch(() => []),
+        ]);
+
+        if (!active) return;
+
+        setMatches(nextMatches.map(normalizeMatchEvent));
+        setChampionships(nextChampionships);
+        setPlayers(nextPlayers.map(normalizePlayer));
+        if (nextUsers.length) {
+          setUsers(nextUsers.map((user) => normalizeUser({
+            ...user,
+            id: user.id,
+            backendId: user.id,
+            role: user.role === 'admin' ? 'admin' : 'player',
+          })));
+        }
+        setServerState({ loading: false, error: '' });
+      } catch (error) {
+        if (!active) return;
+        setServerState({ loading: false, error: error.message || 'Nao foi possivel carregar dados do servidor.' });
+      }
+    };
+
+    loadServerData();
+    const timer = window.setInterval(() => loadServerData({ silent: true }), 5000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -721,17 +639,97 @@ function App() {
     localStorage.setItem('torinnofc-tryouts', JSON.stringify(tryouts));
   }, [tryouts]);
 
+  useEffect(() => {
+    if (!session?.email) {
+      setNotificationsState({ loading: false, error: '', items: [], unreadCount: 0 });
+      return undefined;
+    }
+
+    let active = true;
+
+    const loadNotifications = async ({ silent = false } = {}) => {
+      if (!silent) {
+        setNotificationsState((state) => ({ ...state, loading: true, error: '' }));
+      }
+
+      try {
+        const payload = await fetchNotifications(session.email, { limit: 50 });
+        if (!active) return;
+        setNotificationsState({
+          loading: false,
+          error: '',
+          items: payload.notifications || [],
+          unreadCount: payload.unreadCount || 0,
+        });
+      } catch (error) {
+        if (!active) return;
+        if (import.meta.env.DEV) {
+          console.error('[notifications]', error);
+        }
+        setNotificationsState((state) => ({
+          ...state,
+          loading: false,
+          error: 'Nao foi possivel carregar as notificacoes.',
+        }));
+      }
+    };
+
+    const loadPreferences = async () => {
+      try {
+        const preferences = await fetchNotificationPreferences(session.email);
+        if (active) setNotificationPreferences(preferences);
+      } catch {
+        if (active) setNotificationPreferences(null);
+      }
+    };
+
+    loadNotifications();
+    loadPreferences();
+    const timer = window.setInterval(() => loadNotifications({ silent: true }), 5000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.email]);
+
   if (booting) {
     return <Preloader />;
   }
 
-  const handleAuth = (form, isRegister) => {
-    const email = form.email.trim().toLowerCase();
+  const handleAuth = async (form, isRegister) => {
+    const email = normalizeEmail(form.email);
+    if (!isValidEmail(email)) {
+      return { error: 'Digite um e-mail valido.' };
+    }
     const existing = users.find((user) => user.email.toLowerCase() === email);
 
     if (isRegister) {
       if (existing) {
         return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
+      }
+
+      if (hasSupabaseConfig) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: form.password,
+          options: {
+            data: {
+              name: form.name.trim(),
+              nickname: form.nickname.trim(),
+              position: form.position,
+              shirt: form.shirt,
+            },
+          },
+        });
+
+        if (error) {
+          return { error: 'Nao foi possivel criar a conta. Verifique o e-mail e tente novamente.' };
+        }
+
+        if (!data.session) {
+          return { error: 'Cadastro criado. Confirme seu e-mail antes de entrar na plataforma.' };
+        }
       }
 
       const user = normalizeUser({
@@ -745,13 +743,42 @@ function App() {
         position: form.position,
         shirt: form.shirt,
       });
-      const player = createPlayerFromUser(user);
-      const userWithPlayer = { ...user, playerId: player.id };
+      const userWithPlayer = { ...user };
 
       setUsers((items) => [...items, userWithPlayer]);
-      setPlayers((items) => [player, ...items]);
       setSession(publicUser(userWithPlayer));
       setView('dashboard');
+      apiSyncUser(userWithPlayer).catch(() => {});
+      return { ok: true };
+    }
+
+    if (!existing && hasSupabaseConfig) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: form.password });
+      if (error || !data.user) {
+        return { error: 'E-mail ou senha incorretos.' };
+      }
+      if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        return { error: 'Confirme seu e-mail antes de acessar a plataforma.' };
+      }
+
+      const metadata = data.user.user_metadata || {};
+      const user = normalizeUser({
+        id: data.user.id,
+        name: metadata.name || email.split('@')[0],
+        nickname: metadata.nickname || metadata.name || email.split('@')[0],
+        email,
+        password: '',
+        role: 'player',
+        staffRole: 'Membro',
+        position: metadata.position || 'Meio-campo',
+        shirt: metadata.shirt || '10',
+      });
+      const userWithPlayer = { ...user };
+      setUsers((items) => [...items, userWithPlayer]);
+      setSession(publicUser(userWithPlayer));
+      setView('dashboard');
+      apiSyncUser(userWithPlayer).catch(() => {});
       return { ok: true };
     }
 
@@ -767,6 +794,111 @@ function App() {
   const notify = (message) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2200);
+  };
+
+  const saveMatch = async (match, existingId) => {
+    const payload = toMatchPayload(match);
+    const saved = existingId
+      ? await apiUpdateMatch(existingId, payload)
+      : await apiCreateMatch(payload);
+    setMatches((items) => {
+      const normalized = normalizeMatchEvent(saved);
+      return existingId
+        ? items.map((item) => (item.id === existingId ? normalized : item))
+        : [...items, normalized];
+    });
+    return saved;
+  };
+
+  const removeMatch = async (matchId) => {
+    await apiDeleteMatch(matchId);
+    setMatches((items) => items.filter((match) => match.id !== matchId));
+  };
+
+  const saveChampionship = async (championship, existingId) => {
+    const saved = existingId
+      ? await apiUpdateChampionship(existingId, championship)
+      : await apiCreateChampionship(championship);
+    setChampionships((items) => (
+      existingId
+        ? items.map((item) => (item.id === existingId ? saved : item))
+        : [saved, ...items]
+    ));
+    return saved;
+  };
+
+  const removeChampionship = async (championshipId) => {
+    await apiDeleteChampionship(championshipId);
+    setChampionships((items) => items.filter((championship) => championship.id !== championshipId));
+  };
+
+  const createPlayer = async (player) => {
+    const saved = await apiCreatePlayer(player);
+    setPlayers((items) => [normalizePlayer(saved), ...items]);
+    return saved;
+  };
+
+  const updatePlayerStats = async (playerId, stats) => {
+    const saved = await apiUpdatePlayerStats(playerId, stats);
+    setPlayers((items) => items.map((player) => (player.id === playerId ? normalizePlayer(saved) : player)));
+    return saved;
+  };
+
+  const removePlayer = async (playerId) => {
+    await apiDeletePlayer(playerId);
+    setPlayers((items) => items.filter((player) => player.id !== playerId));
+  };
+
+  const setUserRole = async (account, nextRole) => {
+    if (!account.backendId) {
+      const synced = await apiSyncUser(account);
+      account.backendId = synced.id;
+    }
+    const updated = await apiUpdateUserRole(account.backendId, nextRole);
+    setUsers((items) =>
+      items.map((item) =>
+        item.id === account.id
+          ? { ...item, backendId: updated.id, role: updated.role, staffRole: updated.staffRole }
+          : item,
+      ),
+    );
+    return updated;
+  };
+
+  const refreshNotifications = async () => {
+    if (!session?.email) return;
+    const payload = await fetchNotifications(session.email, { limit: 50 });
+    setNotificationsState({
+      loading: false,
+      error: '',
+      items: payload.notifications || [],
+      unreadCount: payload.unreadCount || 0,
+    });
+  };
+
+  const markNotificationRead = async (id, isRead = true) => {
+    if (!session?.email) return;
+    await apiMarkNotificationRead(id, session.email, isRead);
+    await refreshNotifications();
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!session?.email) return;
+    await apiMarkAllNotificationsRead(session.email);
+    await refreshNotifications();
+  };
+
+  const deleteNotification = async (id) => {
+    if (!session?.email) return;
+    await apiDeleteNotification(id, session.email);
+    await refreshNotifications();
+  };
+
+  const saveNotificationPreferences = async (preferences) => {
+    if (!session?.email) return;
+    const saved = await updateNotificationPreferences(session.email, preferences);
+    setNotificationPreferences(saved);
+    notify('Preferencias de notificacoes atualizadas.');
   };
 
   const logout = () => {
@@ -794,7 +926,17 @@ function App() {
   }
 
   return (
-    <DashboardShell user={session} view={view} setView={setView} onLogout={logout} notify={notify}>
+    <DashboardShell
+      user={session}
+      view={view}
+      setView={setView}
+      onLogout={logout}
+      notify={notify}
+      notificationsState={notificationsState}
+      markNotificationRead={markNotificationRead}
+      markAllNotificationsRead={markAllNotificationsRead}
+      refreshNotifications={refreshNotifications}
+    >
       <PageRouter
         view={view}
         setView={setView}
@@ -806,6 +948,23 @@ function App() {
         setPlayers={setPlayers}
         matches={matches}
         setMatches={setMatches}
+        saveMatch={saveMatch}
+        removeMatch={removeMatch}
+        championships={championships}
+        saveChampionship={saveChampionship}
+        removeChampionship={removeChampionship}
+        createPlayer={createPlayer}
+        updatePlayerStats={updatePlayerStats}
+        removePlayer={removePlayer}
+        serverState={serverState}
+        setUserRole={setUserRole}
+        notificationsState={notificationsState}
+        markNotificationRead={markNotificationRead}
+        markAllNotificationsRead={markAllNotificationsRead}
+        deleteNotification={deleteNotification}
+        refreshNotifications={refreshNotifications}
+        notificationPreferences={notificationPreferences}
+        saveNotificationPreferences={saveNotificationPreferences}
         tryouts={tryouts}
         setTryouts={setTryouts}
         selectedPlayerId={selectedPlayerId}
@@ -900,6 +1059,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
     website: '',
   });
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   const isRegister = mode === 'register';
 
@@ -909,7 +1069,8 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Verificacao bloqueada. Tente novamente.');
       return;
     }
-    if (!form.email.includes('@')) {
+    const email = normalizeEmail(form.email);
+    if (!isValidEmail(email)) {
       setError('Digite um e-mail valido.');
       return;
     }
@@ -922,13 +1083,55 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       return;
     }
 
-    const result = onAuth(form, isRegister);
+    const result = await onAuth({ ...form, email }, isRegister);
     if (result?.error) {
       setError(result.error);
+      setInfo('');
       return;
     }
 
     setError('');
+    setInfo('');
+  };
+
+  const sendPasswordReset = async () => {
+    const email = normalizeEmail(form.email);
+    if (!isValidEmail(email)) {
+      setError('Digite um e-mail valido para recuperar a senha.');
+      return;
+    }
+    if (!hasSupabaseConfig) {
+      setError('Recuperacao de senha exige Supabase configurado.');
+      return;
+    }
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (resetError) {
+      setError('Nao foi possivel enviar o link de recuperacao.');
+      return;
+    }
+    setError('');
+    setInfo('Se o e-mail estiver cadastrado, enviaremos um link de recuperacao.');
+  };
+
+  const resendConfirmation = async () => {
+    const email = normalizeEmail(form.email);
+    if (!isValidEmail(email)) {
+      setError('Digite um e-mail valido para reenviar a confirmacao.');
+      return;
+    }
+    if (!hasSupabaseConfig) {
+      setError('Reenvio de confirmacao exige Supabase configurado.');
+      return;
+    }
+    const { error: resendError } = await supabase.auth.resend({ type: 'signup', email });
+    if (resendError) {
+      setError('Nao foi possivel reenviar a confirmacao.');
+      return;
+    }
+    setError('');
+    setInfo('Se houver uma conta pendente, a confirmacao sera reenviada.');
   };
 
   return (
@@ -998,18 +1201,30 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
             </div>
           )}
           {error && <p className="form-error">{error}</p>}
+          {info && <p className="form-info">{info}</p>}
           <button className="button primary full" type="submit">
             {isRegister ? 'Criar conta' : 'Entrar'}
             <ChevronRight size={18} />
           </button>
+          <div className="auth-help-actions">
+            <button className="button minimal" type="button" onClick={sendPasswordReset}>
+              Recuperar senha
+            </button>
+            <button className="button minimal" type="button" onClick={resendConfirmation}>
+              Reenviar confirmacao
+            </button>
+          </div>
         </form>
       </section>
     </main>
   );
 }
 
-function DashboardShell({ children, user, view, setView, onLogout, notify }) {
+function DashboardShell({ children, user, view, setView, onLogout, notify, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
   const [open, setOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const unreadCount = notificationsState?.unreadCount || 0;
+  const badgeLabel = unreadCount > 99 ? '99+' : unreadCount > 9 ? '9+' : String(unreadCount);
 
   return (
     <main className="app-shell">
@@ -1034,7 +1249,7 @@ function DashboardShell({ children, user, view, setView, onLogout, notify }) {
         </div>
 
         <nav className="side-nav">
-          {navItems.filter((item) => item.id !== 'admin' || user.role === 'admin').map((item) => {
+          {navItems.filter((item) => !['admin', 'settings'].includes(item.id) || user.role === 'admin').map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -1068,14 +1283,216 @@ function DashboardShell({ children, user, view, setView, onLogout, notify }) {
             <span>TorinnoFC</span>
             <strong>{pageTitle(view)}</strong>
           </div>
-          <button className="notification" type="button" onClick={() => notify('Voce tem 3 avisos de partidas e ranking.')}>
-            <Bell size={18} />
-            <small>3</small>
-          </button>
+          <div className="notification-wrap">
+            <button className="notification" type="button" onClick={() => setNotificationsOpen(!notificationsOpen)} aria-label="Abrir notificacoes">
+              <Bell size={18} />
+              {unreadCount > 0 && <small>{badgeLabel}</small>}
+            </button>
+            {notificationsOpen && (
+              <NotificationsPopover
+                notificationsState={notificationsState}
+                setView={setView}
+                onClose={() => setNotificationsOpen(false)}
+                onMarkRead={markNotificationRead}
+                onMarkAllRead={markAllNotificationsRead}
+                onRetry={refreshNotifications}
+              />
+            )}
+          </div>
         </header>
         {children}
       </section>
     </main>
+  );
+}
+
+function NotificationsPopover({ notificationsState, setView, onClose, onMarkRead, onMarkAllRead, onRetry }) {
+  const items = (notificationsState?.items || []).slice(0, 6);
+  const hasUnread = (notificationsState?.unreadCount || 0) > 0;
+
+  const openNotification = async (notification) => {
+    if (!notification.isRead) {
+      await onMarkRead(notification.id, true);
+    }
+    navigateFromNotification(notification, setView);
+    onClose();
+  };
+
+  return (
+    <div className="notifications-popover">
+      <div className="notifications-popover-head">
+        <div>
+          <strong>Notificacoes</strong>
+          <span>{hasUnread ? `${notificationsState.unreadCount} nao lida(s)` : 'Sem notificacoes nao lidas'}</span>
+        </div>
+        {hasUnread && (
+          <button className="button minimal small" type="button" onClick={onMarkAllRead}>
+            Marcar todas
+          </button>
+        )}
+      </div>
+      {notificationsState?.loading && <div className="empty-state">Carregando notificacoes...</div>}
+      {!notificationsState?.loading && notificationsState?.error && (
+        <div className="empty-state notification-empty">
+          <Bell size={22} />
+          <strong>{notificationsState.error}</strong>
+          <span>Verifique sua conexao e tente novamente.</span>
+          <button className="button minimal small" type="button" onClick={onRetry}>Tentar novamente</button>
+        </div>
+      )}
+      {!notificationsState?.loading && !notificationsState?.error && items.length === 0 && (
+        <div className="empty-state notification-empty">
+          <Bell size={22} />
+          <strong>Nao ha notificacoes no momento.</strong>
+          <span>Novas partidas, atualizacoes do elenco e avisos importantes aparecerao aqui.</span>
+        </div>
+      )}
+      <div className="notifications-list compact">
+        {items.map((notification) => (
+          <NotificationItem
+            key={notification.id}
+            notification={notification}
+            onOpen={() => openNotification(notification)}
+            onToggleRead={() => onMarkRead(notification.id, !notification.isRead)}
+          />
+        ))}
+      </div>
+      <button
+        className="button secondary full"
+        type="button"
+        onClick={() => {
+          setView('notifications');
+          onClose();
+        }}
+      >
+        Ver todas as notificacoes
+      </button>
+    </div>
+  );
+}
+
+function NotificationsPage({ notificationsState, markNotificationRead, markAllNotificationsRead, deleteNotification, refreshNotifications, setView, notify }) {
+  const [filter, setFilter] = useState('Todas');
+  const categoryMap = {
+    Todas: null,
+    'Nao lidas': 'unread',
+    Partidas: 'match',
+    Campeonatos: 'championship',
+    Elenco: 'member',
+    Estatisticas: 'statistics',
+    Administracao: 'admin',
+  };
+  const items = (notificationsState?.items || []).filter((notification) => {
+    const category = categoryMap[filter];
+    if (!category) return true;
+    if (category === 'unread') return !notification.isRead;
+    return notificationCategory(notification.type) === category;
+  });
+  const grouped = groupNotificationsByDate(items);
+
+  const openNotification = async (notification) => {
+    if (!notification.isRead) {
+      await markNotificationRead(notification.id, true);
+    }
+    navigateFromNotification(notification, setView);
+  };
+
+  return (
+    <section>
+      <div className="section-title-actions">
+        <SectionHeader eyebrow="Central" title="Notificacoes" />
+        <button
+          className="button minimal"
+          type="button"
+          onClick={async () => {
+            await markAllNotificationsRead();
+            notify('Todas as notificacoes foram marcadas como lidas.');
+          }}
+        >
+          Marcar todas como lidas
+        </button>
+      </div>
+      <div className="calendar-filters notification-filters">
+        {Object.keys(categoryMap).map((item) => (
+          <button className={filter === item ? 'active' : ''} key={item} type="button" onClick={() => setFilter(item)}>
+            {item}
+          </button>
+        ))}
+      </div>
+      {notificationsState?.loading && <div className="empty-state">Carregando notificacoes...</div>}
+      {!notificationsState?.loading && notificationsState?.error && (
+        <div className="empty-state-card notification-empty-page">
+          <div className="icon-tile gold">
+            <Bell size={16} />
+          </div>
+          <div>
+            <strong>{notificationsState.error}</strong>
+            <span>Verifique sua conexao e tente novamente.</span>
+          </div>
+          <button className="button minimal small" type="button" onClick={refreshNotifications}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
+      {!notificationsState?.loading && !notificationsState?.error && items.length === 0 && (
+        <EmptyState icon={Bell} title="Nao ha notificacoes no momento." description="Novas partidas, atualizacoes do elenco e avisos importantes aparecerao aqui." />
+      )}
+      <div className="notifications-page-list">
+        {Object.entries(grouped).map(([group, notifications]) => (
+          <div className="notification-group" key={group}>
+            <h3>{group}</h3>
+            <div className="notifications-list">
+              {notifications.map((notification) => (
+                <NotificationItem
+                  key={notification.id}
+                  notification={notification}
+                  onOpen={() => openNotification(notification)}
+                  onToggleRead={() => markNotificationRead(notification.id, !notification.isRead)}
+                  onDelete={async () => {
+                    await deleteNotification(notification.id);
+                    notify('Notificacao excluida.');
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function NotificationItem({ notification, onOpen, onToggleRead, onDelete }) {
+  const Icon = notificationIcon(notification.type);
+
+  return (
+    <article className={`notification-item ${notification.isRead ? '' : 'unread'} ${notification.type.includes('1h') ? 'urgent' : ''}`}>
+      <button className="notification-main" type="button" onClick={onOpen}>
+        <span className={`notification-type ${notificationCategory(notification.type)}`}>
+          <Icon size={16} />
+        </span>
+        <span>
+          <strong>{notification.title}</strong>
+          <small>{notification.message}</small>
+          <em>{formatDateTime(notification.createdAt)}</em>
+        </span>
+      </button>
+      <div className="notification-actions">
+        {notification.metadata?.whatsappUrl && (
+          <button className="button minimal small" type="button" onClick={() => window.open(notification.metadata.whatsappUrl, '_blank', 'noopener,noreferrer')}>
+            WhatsApp
+          </button>
+        )}
+        <button className="button minimal small" type="button" onClick={onToggleRead}>
+          {notification.isRead ? 'Nao lida' : 'Lida'}
+        </button>
+        {onDelete && (
+          <button className="button minimal small danger" type="button" onClick={onDelete}>
+            Excluir
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -1090,9 +1507,10 @@ function PageRouter(props) {
     tryouts: <Tryouts {...props} />,
     matches: <Matches {...props} />,
     calendar: <Calendar {...props} />,
+    notifications: <NotificationsPage {...props} />,
     ranking: <Ranking {...props} />,
     team: <Team {...props} />,
-    championships: <Championships notify={props.notify} />,
+    championships: <Championships {...props} />,
     admin: <AdminPanel {...props} />,
     settings: <SettingsPage {...props} />,
   };
@@ -1100,9 +1518,8 @@ function PageRouter(props) {
   return pages[view] || <Dashboard {...props} />;
 }
 
-function Dashboard({ user, players, matches, setView }) {
+function Dashboard({ user, players, matches, championships = [], setView }) {
   const endedMatches = matches.filter((match) => match.status === 'Encerrada');
-  const activeChampionships = ['Liga Premium', 'Copa Digital'];
   const teamStats = getTeamStats(players, matches);
 
   return (
@@ -1123,10 +1540,10 @@ function Dashboard({ user, players, matches, setView }) {
         </div>
 
         <div className="dashboard-metrics">
-          <StatCard icon={Trophy} value={`${teamStats.winRate}%`} label="Aproveitamento" />
+          <StatCard icon={Trophy} value={teamStats.hasFinishedMatches ? `${teamStats.winRate}%` : 'Sem dados'} label="Aproveitamento" />
           <StatCard icon={BarChart3} value={teamStats.totalGoals} label="Gols do elenco" />
           <StatCard icon={Users} value={players.length} label="Jogadores" />
-          <StatCard icon={Star} value={teamStats.avgRating} label="Nota media" />
+          <StatCard icon={Star} value={teamStats.hasRatings ? teamStats.avgRating : 'Sem dados'} label="Nota media" />
         </div>
 
         <TeamInsights stats={teamStats} players={players} setView={setView} />
@@ -1143,18 +1560,21 @@ function Dashboard({ user, players, matches, setView }) {
               </button>
             </div>
             <div className="dashboard-list">
-              {activeChampionships.map((name, index) => (
-                <div className="dashboard-list-row" key={name}>
+              {championships.slice(0, 4).map((championship, index) => (
+                <div className="dashboard-list-row" key={championship.id}>
                   <div className={`icon-tile ${index === 0 ? 'green' : 'blue'}`}>
                     <Trophy size={16} />
                   </div>
                   <div>
-                    <strong>{name}</strong>
-                    <span>{index === 0 ? 'Fase de grupos' : 'Preparacao'}</span>
+                    <strong>{championship.name}</strong>
+                    <span>{championship.season || championship.format || 'Campeonato cadastrado'}</span>
                   </div>
-                  <small className={`status ${index === 0 ? 'live' : ''}`}>{index === 0 ? 'Ativo' : 'Em breve'}</small>
+                  <small className={`status ${championship.status === 'em_andamento' ? 'live' : ''}`}>{championshipStatusLabel(championship.status)}</small>
                 </div>
               ))}
+              {championships.length === 0 && (
+                <EmptyState icon={Trophy} title="Nenhum campeonato cadastrado." description="Quando um admin criar um campeonato, ele aparece aqui." action="Abrir campeonatos" onAction={() => setView('championships')} />
+              )}
             </div>
           </article>
 
@@ -1226,7 +1646,8 @@ function getTeamStats(players, matches) {
     return Number.isFinite(homeScore) && Number.isFinite(awayScore) && homeScore === awayScore;
   }).length;
   const losses = Math.max(finished.length - wins - draws, 0);
-  const avgRating = players.length ? (totals.rating / players.length).toFixed(1) : '0.0';
+  const playersWithRating = players.filter((player) => Number(player.stats?.rating) > 0);
+  const avgRating = playersWithRating.length ? (playersWithRating.reduce((sum, player) => sum + Number(player.stats?.rating || 0), 0) / playersWithRating.length).toFixed(1) : '0.0';
   const winRate = finished.length ? Math.round((wins / finished.length) * 100) : 0;
   const positionCounts = players.reduce((items, player) => {
     const key = player.position || 'Sem posicao';
@@ -1245,6 +1666,9 @@ function getTeamStats(players, matches) {
     draws,
     losses,
     winRate,
+    hasFinishedMatches: finished.length > 0,
+    hasRatings: playersWithRating.length > 0,
+    hasProductionStats: totals.goals + totals.assists + totals.recoveries > 0,
     positionCounts,
   };
 }
@@ -1268,9 +1692,10 @@ function TeamInsights({ stats, players, setView }) {
             Partidas
           </button>
         </div>
-        <ApexChart
-          className="chart-box small"
-          options={{
+        {stats.hasFinishedMatches ? (
+          <ApexChart
+            className="chart-box small"
+            options={{
             chart: { type: 'radialBar', sparkline: { enabled: true } },
             series: [stats.winRate],
             labels: ['Vitorias'],
@@ -1317,8 +1742,11 @@ function TeamInsights({ stats, players, setView }) {
             },
             stroke: { lineCap: 'round' },
             tooltip: { enabled: true, theme: 'dark', y: { formatter: (value) => `${value}%` } },
-          }}
-        />
+            }}
+          />
+        ) : (
+          <EmptyState icon={Flag} title="Sem partidas registradas" description="O resumo competitivo aparece apos resultados reais." />
+        )}
         <div className="chart-legend">
           <span><i className="win" /> {stats.wins}V</span>
           <span><i className="draw" /> {stats.draws}E</span>
@@ -1336,14 +1764,18 @@ function TeamInsights({ stats, players, setView }) {
             Desempenho
           </button>
         </div>
-        <ApexChart
-          className="chart-box"
-          options={makeApexBarOptions({
-            categories: ['Gols', 'Assist.', 'Roubadas'],
-            series: [{ name: 'Total', data: [stats.totalGoals, stats.assists, stats.recoveries] }],
-            colors: ['#d4a24c'],
-          })}
-        />
+        {stats.hasProductionStats ? (
+          <ApexChart
+            className="chart-box"
+            options={makeApexBarOptions({
+              categories: ['Gols', 'Assist.', 'Roubadas'],
+              series: [{ name: 'Total', data: [stats.totalGoals, stats.assists, stats.recoveries] }],
+              colors: ['#d4a24c'],
+            })}
+          />
+        ) : (
+          <EmptyState icon={BarChart3} title="Nenhuma estatistica registrada." description="As estatisticas do elenco aparecerao aqui apos serem cadastradas." />
+        )}
       </article>
 
       <article className="panel analytics-card wide">
@@ -1491,7 +1923,17 @@ function ApexChart({ options, className = '' }) {
 }
 
 function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify }) {
-  const base = findPlayerForUser(user, players);
+  const linkedPlayer = findPlayerForUser(user, players);
+  const base = linkedPlayer || {
+    id: null,
+    fullName: user.name || 'Membro Torinno FC',
+    nickname: user.nickname || user.name || 'Membro',
+    position: user.position || 'Sem posicao',
+    shirt: user.shirt || 0,
+    bio: '',
+    status: 'Sem jogador',
+    photo: user.photo || '',
+  };
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: user.name || base.fullName,
@@ -1506,9 +1948,9 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
   const statusLabel = base.status === 'Ativo' ? 'Contratado' : base.status || 'Contratado';
   const [teamInfo, setTeamInfo] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('torinnofc-team')) || { name: 'Vikingsss FC', code: '83987726302' };
+      return JSON.parse(localStorage.getItem('torinnofc-team')) || { name: 'Torinno FC', code: '83987726302' };
     } catch {
-      return { name: 'Vikingsss FC', code: '83987726302' };
+      return { name: 'Torinno FC', code: '83987726302' };
     }
   });
   const [editingTeam, setEditingTeam] = useState(false);
@@ -1631,22 +2073,24 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
               };
               setUser(nextUser);
               setUsers(users.map((item) => (item.id === user.id ? { ...item, ...nextUser } : item)));
-              setPlayers(
-                players.map((player) =>
-                  player.id === base.id
-                    ? {
-                        ...player,
-                        fullName: form.name.trim(),
-                        nickname: form.nickname.trim(),
-                        position: form.position,
-                        shirt: Number(form.shirt) || 0,
-                        avatar: getInitials(form.nickname.trim()),
-                        photo: form.photo,
-                        bio: form.bio.trim(),
-                      }
-                    : player,
-                ),
-              );
+              if (linkedPlayer) {
+                setPlayers(
+                  players.map((player) =>
+                    player.id === base.id
+                      ? {
+                          ...player,
+                          fullName: form.name.trim(),
+                          nickname: form.nickname.trim(),
+                          position: form.position,
+                          shirt: Number(form.shirt) || 0,
+                          avatar: getInitials(form.nickname.trim()),
+                          photo: form.photo,
+                          bio: form.bio.trim(),
+                        }
+                      : player,
+                  ),
+                );
+              }
               setEditing(false);
               notify('Perfil atualizado.');
             }}
@@ -1775,20 +2219,29 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
   );
 }
 
-function Performance({ user, players, setPlayers, notify }) {
+function Performance({ user, players, setPlayers, updatePlayerStats, notify }) {
   const me = findPlayerForUser(user, players);
   const [stats, setStats] = useState({
-    ...me.stats,
-    shots: me.stats.shots || 0,
-    passes: me.stats.passes || 0,
-    yellow: me.stats.yellow || 0,
-    red: me.stats.red || 0,
-    notes: me.stats.notes || '',
+    ...(me?.stats || {}),
+    shots: me?.stats?.shots || 0,
+    passes: me?.stats?.passes || 0,
+    yellow: me?.stats?.yellow || 0,
+    red: me?.stats?.red || 0,
+    notes: me?.stats?.notes || '',
   });
 
   const updateNumber = (key, value) => {
     setStats({ ...stats, [key]: value === '' ? 0 : Number(value) });
   };
+
+  if (!me) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Controle pessoal" title="Meu desempenho" />
+        <EmptyState icon={Activity} title="Nenhum jogador vinculado ao seu perfil." description="Quando seu perfil de jogador for cadastrado no elenco, suas estatisticas aparecem aqui." />
+      </section>
+    );
+  }
 
   return (
     <section>
@@ -1834,8 +2287,12 @@ function Performance({ user, players, setPlayers, notify }) {
                 notify('A nota da partida deve ser entre 0 e 10.');
                 return;
               }
-              setPlayers(players.map((player) => (player.id === me.id ? { ...player, stats } : player)));
-              notify('Desempenho salvo.');
+              updatePlayerStats(me.id, stats)
+                .then((updatedPlayer) => {
+                  setPlayers(players.map((player) => (player.id === me.id ? normalizePlayer(updatedPlayer) : player)));
+                  notify('Desempenho salvo.');
+                })
+                .catch((error) => notify(error.message || 'Nao foi possivel salvar o desempenho.'));
             }}
           >
             <Save size={16} />
@@ -1895,7 +2352,7 @@ function Players({ players, setView, setSelectedPlayerId }) {
             </button>
           </article>
         ))}
-        {filtered.length === 0 && <div className="empty-state">Nenhum jogador encontrado.</div>}
+        {filtered.length === 0 && <div className="empty-state">{players.length === 0 ? 'Nenhum jogador cadastrado no elenco.' : 'Nenhum jogador encontrado.'}</div>}
       </div>
     </section>
   );
@@ -2036,71 +2493,85 @@ function Tryouts({ tryouts, setTryouts, notify }) {
   );
 }
 
-function Matches({ matches, setMatches, notify }) {
+function Matches({ matches, saveMatch, notify }) {
   return (
     <section>
       <SectionHeader eyebrow="Agenda competitiva" title="Partidas" />
       <div className="match-list">
         {matches.map((match) => (
-          <MatchCard key={match.id} match={match} setMatches={setMatches} notify={notify} />
+          <MatchCard key={match.id} match={match} saveMatch={saveMatch} notify={notify} />
         ))}
       </div>
     </section>
   );
 }
 
-function Calendar({ matches, setMatches, tryouts = [], notify }) {
+function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], championships = [], notify }) {
   const [monthDate, setMonthDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(toDateKey(new Date()));
   const [filter, setFilter] = useState('Todos');
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
   const days = makeCalendarDays(monthDate);
   const monthTitle = monthDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   const calendarEvents = buildCalendarEvents(matches, tryouts);
   const selectedEvents = calendarEvents.filter((event) => event.dateKey === selectedDateKey);
   const visibleEvents = filter === 'Todos' ? calendarEvents : calendarEvents.filter((event) => getEventType(event) === filter);
   const selectedDateLabel = formatDateLabel(selectedDateKey);
+  const isAdmin = user?.role === 'admin';
 
-  const createMatchForDay = async (day) => {
+  const openForm = (dateKey, match = null) => {
+    if (!isAdmin && !match) {
+      notify('Somente administradores podem criar partidas.');
+      return;
+    }
+    setSelectedDateKey(dateKey);
+    setModal({ type: match ? 'edit-match' : 'new-match', dateKey, match });
+  };
+
+  const handleSaveMatch = async (form, existingId) => {
     const match = normalizeMatchEvent({
-      id: Date.now(),
+      ...form,
       home: 'TorinnoFC',
-      away: 'Adversario',
-      date: day.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-      time: '20:00',
-      place: 'A definir',
-      championship: 'Agenda',
-      status: 'Agendada',
-      score: '-',
-      dateKey: day.key,
-      opponentLogo: buildOpponentLogoDataUrl('Adversario'),
+      date: formatDateLabel(form.dateKey),
+      homeLogo: logo,
+      score: form.score || '-',
     });
 
-    if (isDuplicateMatch(matches, match)) {
+    if (!existingId && isDuplicateMatch(matches, match)) {
       notify('Essa partida ja existe nesse dia e horario.');
-      setSelectedDateKey(day.key);
       return;
     }
 
-    setMatches([...matches, match]);
-    setSelectedDateKey(day.key);
-    await notifyMatchCreated(match, notify);
+    setSaving(true);
+    try {
+      await saveMatch(match, existingId);
+      setSelectedDateKey(match.dateKey);
+      setModal(null);
+      notify(existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
+      if (!existingId) {
+        openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify);
+      }
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel salvar a partida.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const cycleMatchStatus = (matchId) => {
-    const flow = ['Agendada', 'Em andamento', 'Encerrada', 'Cancelada'];
-    setMatches(
-      matches.map((match) => {
-        if (match.id !== matchId) return match;
-        const nextStatus = flow[(flow.indexOf(match.status) + 1) % flow.length] || 'Agendada';
-        return { ...match, status: nextStatus };
-      }),
-    );
-    notify('Status da partida atualizado.');
-  };
+  const handleDeleteMatch = async (matchId) => {
+    if (!window.confirm('Excluir esta partida do calendario?')) return;
 
-  const removeMatch = (matchId) => {
-    setMatches(matches.filter((match) => match.id !== matchId));
-    notify('Partida removida do calendario.');
+    setSaving(true);
+    try {
+      await removeMatch(matchId);
+      setModal(null);
+      notify('Partida removida do calendario.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel excluir a partida.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -2166,9 +2637,7 @@ function Calendar({ matches, setMatches, tryouts = [], notify }) {
               type="button"
               onClick={() => {
                 setSelectedDateKey(day.key);
-                if (!hasEvents) {
-                  createMatchForDay(day);
-                }
+                if (isAdmin) openForm(day.key);
               }}
             >
               <span className="day-number">
@@ -2198,10 +2667,10 @@ function Calendar({ matches, setMatches, tryouts = [], notify }) {
             </div>
             <button
               className="button primary"
+              disabled={!isAdmin}
               type="button"
               onClick={() => {
-                const [year, month, day] = selectedDateKey.split('-').map(Number);
-                createMatchForDay({ key: selectedDateKey, date: new Date(year, month - 1, day) });
+                openForm(selectedDateKey);
               }}
             >
               <Plus size={15} />
@@ -2222,16 +2691,14 @@ function Calendar({ matches, setMatches, tryouts = [], notify }) {
                 <div>
                   <strong>{event.title}</strong>
                   <span>{event.subtitle}</span>
+                  {event.championship && <small>{event.championship}</small>}
                 </div>
                 <div className="event-actions">
                   <small className={`event-status ${getEventStatus(event).toLowerCase().replace(/\s+/g, '-')}`}>{getEventStatus(event)}</small>
                   {event.source === 'match' && (
                     <>
-                      <button className="button minimal small" type="button" onClick={() => cycleMatchStatus(event.id)}>
-                        Editar
-                      </button>
-                      <button className="button minimal small danger" type="button" onClick={() => removeMatch(event.id)}>
-                        Remover
+                      <button className="button minimal small" type="button" onClick={() => setModal({ type: 'details', dateKey: event.dateKey, match: event })}>
+                        Detalhes
                       </button>
                     </>
                   )}
@@ -2242,7 +2709,182 @@ function Calendar({ matches, setMatches, tryouts = [], notify }) {
           </div>
         </div>
       </div>
+      {modal && (
+        <MatchModal
+          modal={modal}
+          championships={championships}
+          isAdmin={isAdmin}
+          saving={saving}
+          onClose={() => setModal(null)}
+          onSave={handleSaveMatch}
+          onEdit={(match) => setModal({ type: 'edit-match', dateKey: match.dateKey, match })}
+          onDelete={handleDeleteMatch}
+        />
+      )}
     </section>
+  );
+}
+
+function MatchModal({ modal, championships, isAdmin, saving, onClose, onSave, onEdit, onDelete }) {
+  const isDetails = modal.type === 'details';
+  const match = modal.match || {};
+  const [form, setForm] = useState(() => ({
+    away: match.away || '',
+    dateKey: match.dateKey || modal.dateKey || toDateKey(new Date()),
+    time: match.time || '',
+    opponentLogo: match.opponentLogo || '',
+    whatsappUrl: match.whatsappUrl || WHATSAPP_GROUP_INVITE_URL,
+    championshipId: match.championshipId || '',
+    championship: match.championship || '',
+    place: match.place || 'EA FC 26 | Clubs',
+    status: match.status || 'Agendada',
+    observations: match.observations || '',
+  }));
+  const firstFieldRef = useRef(null);
+
+  useEffect(() => {
+    window.setTimeout(() => firstFieldRef.current?.focus(), 30);
+  }, []);
+
+  const selectedChampionship = championships.find((item) => item.id === form.championshipId);
+
+  const handleLogoFile = async (file) => {
+    if (!file) return;
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    setForm({ ...form, opponentLogo: dataUrl });
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (!form.away.trim() || !form.dateKey || !form.time) {
+      return;
+    }
+
+    onSave(
+      {
+        ...form,
+        away: form.away.trim(),
+        championship: selectedChampionship?.name || form.championship.trim(),
+      },
+      match.id,
+    );
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="panel app-modal" role="dialog" aria-modal="true" aria-labelledby="match-modal-title">
+        <div className="modal-head">
+          <div>
+            <span>{isDetails ? 'Detalhes da partida' : match.id ? 'Editar partida' : 'Nova partida'}</span>
+            <h3 id="match-modal-title">{isDetails ? `${match.home || 'TorinnoFC'} x ${match.away}` : formatDateLabel(form.dateKey)}</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
+          </button>
+        </div>
+
+        {isDetails ? (
+          <div className="match-detail-modal">
+            <div className="event-logos large" aria-hidden="true">
+              <img src={match.homeLogo || logo} alt="" />
+              <img src={match.opponentLogo || buildOpponentLogoDataUrl(match.away)} alt="" />
+            </div>
+            <div className="profile-info-grid">
+              <div>
+                <small>Adversario</small>
+                <strong>{match.away}</strong>
+              </div>
+              <div>
+                <small>Data e horario</small>
+                <strong>{formatDateLabel(match.dateKey)} as {match.time || 'A definir'}</strong>
+              </div>
+              <div>
+                <small>Campeonato</small>
+                <strong>{match.championship || 'Nao informado'}</strong>
+              </div>
+              <div>
+                <small>Status</small>
+                <strong>{match.status}</strong>
+              </div>
+            </div>
+            {match.observations && <p className="modal-note">{match.observations}</p>}
+            <div className="modal-actions">
+              {match.whatsappUrl && (
+                <button className="button primary" type="button" onClick={() => window.open(match.whatsappUrl, '_blank', 'noopener,noreferrer')}>
+                  Acessar grupo do WhatsApp
+                </button>
+              )}
+              {isAdmin && (
+                <>
+                  <button className="button minimal" type="button" onClick={() => onEdit(match)}>
+                    <Edit3 size={15} />
+                    Editar partida
+                  </button>
+                  <button className="button minimal danger" type="button" disabled={saving} onClick={() => onDelete(match.id)}>
+                    <Trash2 size={15} />
+                    Excluir partida
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <form className="modal-form" onSubmit={submit}>
+            <label className="field">
+              <span>Nome do adversario</span>
+              <input ref={firstFieldRef} value={form.away} onChange={(event) => setForm({ ...form, away: event.target.value })} />
+            </label>
+            <div className="form-grid">
+              <Field label="Data da partida" type="date" value={form.dateKey} onChange={(dateKey) => setForm({ ...form, dateKey })} />
+              <Field label="Horario da partida" type="time" value={form.time} onChange={(time) => setForm({ ...form, time })} />
+            </div>
+            <div className="form-grid">
+              <label className="field">
+                <span>Campeonato relacionado</span>
+                <select value={form.championshipId} onChange={(event) => setForm({ ...form, championshipId: event.target.value, championship: '' })}>
+                  <option value="">Sem campeonato</option>
+                  {championships.map((championship) => (
+                    <option value={championship.id} key={championship.id}>{championship.name}</option>
+                  ))}
+                </select>
+              </label>
+              <Field label="Campeonato manual" value={form.championship} onChange={(championship) => setForm({ ...form, championship, championshipId: '' })} />
+            </div>
+            <Field label="Link do WhatsApp" value={form.whatsappUrl} onChange={(whatsappUrl) => setForm({ ...form, whatsappUrl })} />
+            <div className="form-grid">
+              <Field label="Logo por URL" value={form.opponentLogo?.startsWith('data:') ? '' : form.opponentLogo} onChange={(opponentLogo) => setForm({ ...form, opponentLogo })} />
+              <label className="field file-field">
+                <span>Upload da logo</span>
+                <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(event) => handleLogoFile(event.target.files?.[0])} />
+              </label>
+            </div>
+            {form.opponentLogo && (
+              <div className="logo-preview-row">
+                <img src={form.opponentLogo} alt="Logo do adversario" />
+                <span>Logo carregada</span>
+              </div>
+            )}
+            <label className="field">
+              <span>Observacoes</span>
+              <textarea value={form.observations} onChange={(event) => setForm({ ...form, observations: event.target.value })} />
+            </label>
+            <div className="modal-actions">
+              <button className="button primary" type="submit" disabled={saving}>
+                <Save size={16} />
+                {saving ? 'Salvando...' : 'Salvar partida'}
+              </button>
+              <button className="button minimal" type="button" onClick={onClose}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -2268,6 +2910,7 @@ function Ranking({ players }) {
             </div>
           </article>
         ))}
+        {ranked.length === 0 && <EmptyState icon={Trophy} title="Nenhum jogador cadastrado no elenco." description="O ranking aparece quando houver estatisticas reais." />}
       </div>
     </section>
   );
@@ -2293,31 +2936,182 @@ function Team({ players }) {
   );
 }
 
-function Championships({ notify }) {
+function Championships({ user, championships = [], saveChampionship, removeChampionship, serverState, notify }) {
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const isAdmin = user?.role === 'admin';
+
+  const handleSave = async (form, existingId) => {
+    setSaving(true);
+    try {
+      await saveChampionship(form, existingId);
+      setModal(null);
+      notify(existingId ? 'Campeonato atualizado.' : 'Campeonato cadastrado.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel salvar o campeonato.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Excluir este campeonato?')) return;
+
+    setSaving(true);
+    try {
+      await removeChampionship(id);
+      notify('Campeonato excluido.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel excluir o campeonato.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section>
-      <SectionHeader eyebrow="Competicoes" title="Campeonatos" />
-      <div className="card-grid">
-        {['Liga Premium', 'Copa Digital', 'Amistosos Oficiais'].map((name, index) => (
-          <article className="panel" key={name}>
-            <Trophy size={24} />
-            <h3>{name}</h3>
-            <p>{index === 0 ? 'Em andamento' : 'Preparacao'}</p>
-            <button className="button minimal" type="button" onClick={() => notify(`${name} aberto.`)}>
-              Abrir campeonato
-            </button>
+      <div className="section-title-actions">
+        <SectionHeader eyebrow="Competicoes" title="Campeonatos" />
+        {isAdmin && (
+          <button className="button primary" type="button" onClick={() => setModal({})}>
+            <Plus size={15} />
+            Adicionar campeonato
+          </button>
+        )}
+      </div>
+      {serverState?.loading && <div className="empty-state">Carregando campeonatos...</div>}
+      {!serverState?.loading && serverState?.error && <div className="empty-state">{serverState.error}</div>}
+      {!serverState?.loading && !serverState?.error && championships.length === 0 && (
+        <EmptyState icon={Trophy} title="Nenhum campeonato cadastrado." description={isAdmin ? 'Use o botao Adicionar campeonato para criar o primeiro registro real.' : 'Quando um campeonato for cadastrado, ele aparece aqui.'} />
+      )}
+      <div className="card-grid championship-grid">
+        {championships.map((championship) => (
+          <article className="panel championship-card" key={championship.id}>
+            {championship.imageUrl ? <img src={championship.imageUrl} alt={`Imagem do campeonato ${championship.name}`} /> : <Trophy size={24} />}
+            <h3>{championship.name}</h3>
+            <p>{championship.description || championship.format || 'Campeonato do Torinno FC.'}</p>
+            <div className="championship-meta">
+              <span>{championship.season || 'Temporada nao informada'}</span>
+              <small>{championshipStatusLabel(championship.status)}</small>
+            </div>
+            <div className="modal-actions">
+              {championship.officialUrl && (
+                <button className="button minimal" type="button" onClick={() => window.open(championship.officialUrl, '_blank', 'noopener,noreferrer')}>
+                  Link oficial
+                </button>
+              )}
+              {isAdmin && (
+                <>
+                  <button className="button minimal" type="button" onClick={() => setModal(championship)}>
+                    Editar
+                  </button>
+                  <button className="button minimal danger" type="button" disabled={saving} onClick={() => handleDelete(championship.id)}>
+                    Excluir
+                  </button>
+                </>
+              )}
+            </div>
           </article>
         ))}
       </div>
+      {modal && (
+        <ChampionshipModal
+          championship={modal.id ? modal : null}
+          saving={saving}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+        />
+      )}
     </section>
   );
 }
 
-function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMatches, notify }) {
+function ChampionshipModal({ championship, saving, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    name: championship?.name || '',
+    image_url: championship?.imageUrl || '',
+    season: championship?.season || '',
+    start_date: championship?.startDate || '',
+    end_date: championship?.endDate || '',
+    format: championship?.format || '',
+    status: championship?.status || 'futuro',
+    official_url: championship?.officialUrl || '',
+    description: championship?.description || '',
+  }));
+  const firstFieldRef = useRef(null);
+
+  useEffect(() => {
+    window.setTimeout(() => firstFieldRef.current?.focus(), 30);
+  }, []);
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (!form.name.trim()) return;
+    onSave({ ...form, name: form.name.trim() }, championship?.id);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="panel app-modal" role="dialog" aria-modal="true" aria-labelledby="championship-modal-title">
+        <div className="modal-head">
+          <div>
+            <span>Campeonato</span>
+            <h3 id="championship-modal-title">{championship ? 'Editar campeonato' : 'Adicionar campeonato'}</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
+          </button>
+        </div>
+        <form className="modal-form" onSubmit={submit}>
+          <label className="field">
+            <span>Nome do campeonato</span>
+            <input ref={firstFieldRef} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </label>
+          <div className="form-grid">
+            <Field label="Logo ou imagem" value={form.image_url} onChange={(image_url) => setForm({ ...form, image_url })} />
+            <Field label="Temporada" value={form.season} onChange={(season) => setForm({ ...form, season })} />
+          </div>
+          <div className="form-grid">
+            <Field label="Data de inicio" type="date" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} />
+            <Field label="Data de termino" type="date" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} />
+          </div>
+          <div className="form-grid">
+            <Field label="Formato" value={form.format} onChange={(format) => setForm({ ...form, format })} />
+            <label className="field">
+              <span>Status</span>
+              <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
+                <option value="futuro">Futuro</option>
+                <option value="em_andamento">Em andamento</option>
+                <option value="encerrado">Encerrado</option>
+              </select>
+            </label>
+          </div>
+          <Field label="Link oficial" value={form.official_url} onChange={(official_url) => setForm({ ...form, official_url })} />
+          <label className="field">
+            <span>Descricao opcional</span>
+            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          </label>
+          <div className="modal-actions">
+            <button className="button primary" type="submit" disabled={saving}>
+              <Save size={16} />
+              {saving ? 'Salvando...' : 'Salvar campeonato'}
+            </button>
+            <button className="button minimal" type="button" onClick={onClose}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function AdminPanel({ user, users, players, setPlayers, matches, saveMatch, setUserRole, createPlayer, removePlayer, notify }) {
   const [newMatch, setNewMatch] = useState({
     away: '',
     date: toDateKey(new Date()),
     time: '',
+    whatsappUrl: WHATSAPP_GROUP_INVITE_URL,
     opponentLogo: null,
     opponentLogoPreview: '',
   });
@@ -2375,6 +3169,7 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
       time: newMatch.time,
       place: 'A definir',
       championship: 'Admin',
+      whatsappUrl: newMatch.whatsappUrl,
       status: 'Agendada',
       score: '-',
       dateKey: toDateKey(matchDate),
@@ -2387,12 +3182,19 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
       return;
     }
 
-    setMatches([...matches, match]);
-    await notifyMatchCreated(match, notify);
+    try {
+      await saveMatch(match);
+      notify('Partida cadastrada com sucesso.');
+      openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify);
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel criar a partida.');
+      return;
+    }
     setNewMatch({
       away: '',
       date: toDateKey(new Date()),
       time: '',
+      whatsappUrl: WHATSAPP_GROUP_INVITE_URL,
       opponentLogo: null,
       opponentLogoPreview: '',
     });
@@ -2414,24 +3216,19 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
       return;
     }
 
-    setPlayers([
-      ...players,
-      {
-        id: Date.now(),
-        fullName: newPlayer.nickname.trim(),
-        nickname: newPlayer.nickname.trim(),
-        position: newPlayer.position,
-        shirt: Number(newPlayer.shirt),
-        foot: 'Direito',
-        status: 'Ativo',
-        role: 'Jogador',
-        avatar: getInitials(newPlayer.nickname),
-        bio: 'Novo atleta cadastrado pelo painel admin.',
-        stats: { goals: 0, assists: 0, recoveries: 0, matches: 0, wins: 0, losses: 0, rating: 0 },
-      },
-    ]);
-    notify('Jogador cadastrado.');
-    setNewPlayer({ nickname: '', position: 'Atacante', shirt: '11' });
+    createPlayer({
+      fullName: newPlayer.nickname.trim(),
+      nickname: newPlayer.nickname.trim(),
+      position: newPlayer.position,
+      shirt: Number(newPlayer.shirt),
+      status: 'Ativo',
+      stats: { goals: 0, assists: 0, recoveries: 0, matches: 0, wins: 0, losses: 0, rating: 0 },
+    })
+      .then(() => {
+        notify('Jogador cadastrado.');
+        setNewPlayer({ nickname: '', position: 'Atacante', shirt: '11' });
+      })
+      .catch((error) => notify(error.message || 'Nao foi possivel cadastrar o jogador.'));
   };
 
   if (user.role !== 'admin') {
@@ -2454,29 +3251,33 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
         <div className="panel club-control-card">
           <div className="card-title-row">
             <Users size={19} />
-            <h3>Cargos e permissoes</h3>
+            <h3>Administradores e permissoes</h3>
           </div>
           <div className="member-list">
-          {users.map((account) => (
+          {users.filter((account) => account.role === 'admin').map((account) => (
             <div className="member-row" key={account.id}>
-              <div className="avatar small">{getInitials(account.nickname || account.name)}</div>
+              <div className={`avatar small ${account.photo ? 'has-photo' : ''}`}>
+                {account.photo ? <img src={account.photo} alt={`Foto de ${account.nickname || account.name}`} /> : getInitials(account.nickname || account.name)}
+              </div>
               <div className="member-copy">
                 <strong>{account.nickname || account.name}</strong>
                 <span>{account.email}</span>
+                <small>{account.accountStatus || 'active'} | Entrada: {account.joinedAt ? formatDateLabel(account.joinedAt.slice(0, 10)) : 'Nao informada'}</small>
               </div>
               <button
                 className={`role-badge ${account.role === 'admin' ? 'admin' : 'player'}`}
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const nextRole = account.role === 'admin' ? 'player' : 'admin';
-                  setUsers(
-                    users.map((item) =>
-                      item.id === account.id
-                        ? { ...item, role: nextRole, staffRole: nextRole === 'admin' ? 'Admin' : 'Jogador' }
-                        : item,
-                    ),
-                  );
-                  notify(`${account.nickname} agora e ${roleLabel(nextRole)}.`);
+                  if (!window.confirm(`${nextRole === 'admin' ? 'Promover' : 'Remover permissao administrativa de'} ${account.nickname || account.name}?`)) {
+                    return;
+                  }
+                  try {
+                    await setUserRole(account, nextRole);
+                    notify(`${account.nickname} agora e ${roleLabel(nextRole)}.`);
+                  } catch (error) {
+                    notify(error.message || 'Nao foi possivel alterar a permissao.');
+                  }
                 }}
               >
                 {roleLabel(account.role)}
@@ -2495,6 +3296,7 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
             <Field label="Data" type="date" value={newMatch.date} onChange={(date) => setNewMatch({ ...newMatch, date })} />
             <Field label="Hora" type="time" value={newMatch.time} onChange={(time) => setNewMatch({ ...newMatch, time })} />
           </div>
+          <Field label="Link do WhatsApp" value={newMatch.whatsappUrl} onChange={(whatsappUrl) => setNewMatch({ ...newMatch, whatsappUrl })} />
           <label
             className={`logo-upload ${newMatch.opponentLogoPreview ? 'has-preview' : ''}`}
             onDragOver={(event) => event.preventDefault()}
@@ -2550,6 +3352,30 @@ function AdminPanel({ user, users, setUsers, players, setPlayers, matches, setMa
             <Plus size={16} />
             Adicionar jogador
           </button>
+          <div className="member-list admin-player-list">
+            {players.map((player) => (
+              <div className="member-row" key={player.id}>
+                <div className="avatar small">{player.photo ? <img src={player.photo} alt={`Foto de ${player.nickname}`} /> : getInitials(player.nickname)}</div>
+                <div className="member-copy">
+                  <strong>{player.nickname}</strong>
+                  <span>{player.position} | #{player.shirt}</span>
+                </div>
+                <button
+                  className="button minimal small danger"
+                  type="button"
+                  onClick={() => {
+                    if (!window.confirm(`Remover ${player.nickname} do elenco?`)) return;
+                    removePlayer(player.id)
+                      .then(() => notify('Jogador removido do elenco.'))
+                      .catch((error) => notify(error.message || 'Nao foi possivel remover o jogador.'));
+                  }}
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+            {players.length === 0 && <div className="empty-state">Nenhum jogador cadastrado no elenco.</div>}
+          </div>
         </div>
       </div>
     </section>
@@ -2627,7 +3453,7 @@ function readAppSettings() {
   }
 }
 
-function SettingsPage({ user, users, setUsers, notify }) {
+function SettingsPage({ user, users, setUsers, notify, notificationPreferences, saveNotificationPreferences }) {
   const [settings, setSettings] = useState(readAppSettings);
   const isFounder = user.staffRole === 'Fundador';
   const canManagePermissions = isFounder || (user.role === 'admin' && settings.permissions.admin.managePermissions);
@@ -2685,6 +3511,19 @@ function SettingsPage({ user, users, setUsers, notify }) {
     notify(`${account.nickname} agora e ${nextStaffRole}.`);
   };
 
+  if (user.role !== 'admin') {
+    return (
+      <section>
+        <SectionHeader eyebrow="Configuracoes" title="Acesso restrito" />
+        <div className="panel">
+          <ShieldCheck size={24} />
+          <h3>Somente administradores</h3>
+          <p>Seu perfil nao possui permissao para acessar configuracoes administrativas.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="settings-page">
       <SectionHeader eyebrow="Preferencias" title="Configuracoes" />
@@ -2694,6 +3533,22 @@ function SettingsPage({ user, users, setUsers, notify }) {
         <SettingsItem title="Alertas de partidas" checked={settings.notifications.matchAlerts} onChange={() => updateSetting('notifications', 'matchAlerts')} />
         <SettingsItem title="Novas partidas" checked={settings.notifications.newMatch} onChange={() => updateSetting('notifications', 'newMatch')} />
         <SettingsItem title="Novas peneiras" checked={settings.notifications.newTryout} onChange={() => updateSetting('notifications', 'newTryout')} />
+      </SettingsGroup>
+
+      <SettingsGroup title="Preferencias de notificacoes">
+        {!notificationPreferences && <div className="settings-warning">Preferencias indisponiveis enquanto o backend/banco nao responder.</div>}
+        {notificationPreferences && (
+          <>
+            <SettingsItem title="Partidas agendadas" checked={notificationPreferences.matchCreated} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchCreated: !notificationPreferences.matchCreated })} />
+            <SettingsItem title="Alteracoes de partidas" checked={notificationPreferences.matchUpdated} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchUpdated: !notificationPreferences.matchUpdated })} />
+            <SettingsItem title="Lembretes de 24 horas" checked={notificationPreferences.matchReminder24h} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchReminder24h: !notificationPreferences.matchReminder24h })} />
+            <SettingsItem title="Lembretes de 1 hora" checked={notificationPreferences.matchReminder1h} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchReminder1h: !notificationPreferences.matchReminder1h })} />
+            <SettingsItem title="Campeonatos" checked={notificationPreferences.championships} onChange={() => saveNotificationPreferences({ ...notificationPreferences, championships: !notificationPreferences.championships })} />
+            <SettingsItem title="Novos membros" checked={notificationPreferences.newMembers} onChange={() => saveNotificationPreferences({ ...notificationPreferences, newMembers: !notificationPreferences.newMembers })} />
+            <SettingsItem title="Estatisticas" checked={notificationPreferences.statistics} onChange={() => saveNotificationPreferences({ ...notificationPreferences, statistics: !notificationPreferences.statistics })} />
+            <SettingsItem title="Alteracoes administrativas" checked={notificationPreferences.administration} onChange={() => saveNotificationPreferences({ ...notificationPreferences, administration: !notificationPreferences.administration })} />
+          </>
+        )}
       </SettingsGroup>
 
       <SettingsGroup title="Permissoes">
@@ -2854,19 +3709,20 @@ function PlayerDetail({ players, selectedPlayerId }) {
   );
 }
 
-function MatchCard({ match, setMatches, notify }) {
+function MatchCard({ match, saveMatch, notify }) {
   const normalized = normalizeMatchEvent(match);
-  const nextStatus = () => {
+  const nextStatus = async () => {
     const currentIndex = statusFlow.indexOf(normalized.status);
     const status = statusFlow[(currentIndex + 1) % statusFlow.length];
-    setMatches((items) =>
-      items.map((item) =>
-        item.id === normalized.id
-          ? { ...item, status, score: status === 'Encerrada' && item.score === '-' ? '0 x 0' : item.score }
-          : item,
-      ),
-    );
-    notify(`Status atualizado para ${status}.`);
+    try {
+      await saveMatch(
+        { ...normalized, status, score: status === 'Encerrada' && normalized.score === '-' ? '0 x 0' : normalized.score },
+        normalized.id,
+      );
+      notify(`Status atualizado para ${status}.`);
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel atualizar o status.');
+    }
   };
 
   return (
@@ -2906,6 +3762,7 @@ function TopRanking({ players }) {
           <b>{player.stats.rating}</b>
         </div>
       ))}
+      {players.length === 0 && <div className="empty-state">Nenhum jogador cadastrado no elenco.</div>}
     </div>
   );
 }
@@ -3014,6 +3871,112 @@ function isDuplicateMatch(matches, nextMatch) {
   );
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  const email = normalizeEmail(value);
+  if (!email || email.length > 254 || email.includes('..')) return false;
+
+  const parts = email.split('@');
+  if (parts.length !== 2) return false;
+
+  const [local, domain] = parts;
+  if (!local || !domain || !domain.includes('.')) return false;
+  if (local.startsWith('.') || local.endsWith('.')) return false;
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
+function toMatchPayload(match) {
+  const [homeScore, awayScore] = String(match.score || '')
+    .split('x')
+    .map((value) => Number(value.trim()));
+
+  return {
+    home_team: match.home || 'TorinnoFC',
+    away_team: match.away,
+    opponent_logo_url: match.opponentLogo || '',
+    whatsapp_url: match.whatsappUrl || '',
+    match_date: match.dateKey,
+    match_time: match.time,
+    location: match.place || 'EA FC 26 | Clubs',
+    championship_id: match.championshipId || '',
+    championship_name: match.championship || '',
+    status: match.status || 'Agendada',
+    observations: match.observations || '',
+    home_score: Number.isFinite(homeScore) ? homeScore : '',
+    away_score: Number.isFinite(awayScore) ? awayScore : '',
+  };
+}
+
+function championshipStatusLabel(status) {
+  const labels = {
+    futuro: 'Futuro',
+    em_andamento: 'Em andamento',
+    encerrado: 'Encerrado',
+    Preparacao: 'Futuro',
+    'Em andamento': 'Em andamento',
+    Encerrado: 'Encerrado',
+  };
+
+  return labels[status] || 'Futuro';
+}
+
+function notificationCategory(type = '') {
+  if (type.includes('championship')) return 'championship';
+  if (type.includes('member')) return 'member';
+  if (type.includes('statistics')) return 'statistics';
+  if (type.includes('role') || type.includes('admin')) return 'admin';
+  return 'match';
+}
+
+function notificationIcon(type = '') {
+  if (type.includes('championship')) return Trophy;
+  if (type.includes('member')) return UserPlus;
+  if (type.includes('statistics')) return BarChart3;
+  if (type.includes('role') || type.includes('admin')) return ShieldCheck;
+  if (type.includes('reminder')) return Clock;
+  return CalendarDays;
+}
+
+function formatDateTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function groupNotificationsByDate(items) {
+  const today = toDateKey(new Date());
+  const yesterday = toDateKey(addDays(new Date(), -1));
+  const weekAgo = toDateKey(addDays(new Date(), -7));
+
+  return items.reduce((groups, item) => {
+    const key = toDateKey(new Date(item.createdAt));
+    let group = 'Mais antigas';
+    if (key === today) group = 'Hoje';
+    else if (key === yesterday) group = 'Ontem';
+    else if (key >= weekAgo) group = 'Esta semana';
+    groups[group] = groups[group] || [];
+    groups[group].push(item);
+    return groups;
+  }, {});
+}
+
+function navigateFromNotification(notification, setView) {
+  const action = notification.actionUrl || '';
+  if (action.includes('championship')) setView('championships');
+  else if (action.includes('players')) setView('players');
+  else if (action.includes('performance')) setView('performance');
+  else if (action.includes('settings')) setView('settings');
+  else setView('calendar');
+}
+
 function isValidShirtNumber(value) {
   const shirt = Number(value);
   return Number.isInteger(shirt) && shirt > 0 && shirt <= 999;
@@ -3029,6 +3992,7 @@ function pageTitle(view) {
     tryouts: 'Peneiras',
     matches: 'Partidas',
     calendar: 'Calendario',
+    notifications: 'Notificacoes',
     ranking: 'Ranking',
     team: 'Time',
     championships: 'Campeonatos',

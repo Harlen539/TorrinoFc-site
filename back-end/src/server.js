@@ -4,6 +4,12 @@ import helmet from 'helmet';
 import { env } from './config/env.js';
 import { adminMatchesRouter } from './routes/adminMatches.js';
 import { adminTryoutsRouter } from './routes/adminTryouts.js';
+import { championshipsRouter } from './routes/championships.js';
+import { matchesRouter } from './routes/matches.js';
+import { notificationsRouter } from './routes/notifications.js';
+import { playersRouter } from './routes/players.js';
+import { usersRouter } from './routes/users.js';
+import { startReminderScheduler } from './services/reminderScheduler.js';
 
 const app = express();
 
@@ -19,7 +25,7 @@ app.use(cors({
 
     callback(new Error('Origem nao autorizada pelo CORS.'));
   },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-admin-api-key'],
   maxAge: 600,
   optionsSuccessStatus: 204,
@@ -32,6 +38,11 @@ app.get('/health', (_request, response) => {
 
 app.use(adminMatchesRouter);
 app.use(adminTryoutsRouter);
+app.use(matchesRouter);
+app.use(championshipsRouter);
+app.use(usersRouter);
+app.use(notificationsRouter);
+app.use(playersRouter);
 
 app.use((error, _request, response, _next) => {
   console.error('[server] Erro inesperado:', error);
@@ -41,3 +52,9 @@ app.use((error, _request, response, _next) => {
 app.listen(env.port, () => {
   console.info(`TorinnoFC back-end rodando na porta ${env.port}`);
 });
+
+if (env.notifications.reminderSchedulerEnabled) {
+  startReminderScheduler();
+} else {
+  console.info('Agendador de lembretes desativado. Configure ENABLE_REMINDER_SCHEDULER=true para ativar.');
+}

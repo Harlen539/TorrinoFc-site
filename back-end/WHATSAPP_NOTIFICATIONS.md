@@ -53,7 +53,7 @@ x-admin-api-key: sua-chave-interna
 ```json
 {
   "home_team": "Torrino FC",
-  "away_team": "Vikings FC",
+  "away_team": "Adversario FC",
   "match_date": "2026-07-15",
   "match_time": "20:30",
   "location": "EA FC 26 | Clubs",

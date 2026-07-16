@@ -11,10 +11,13 @@ model Match {
   id             String    @id @default(uuid()) @db.Uuid
   homeTeam       String    @map("home_team")
   awayTeam       String    @map("away_team")
+  opponentLogoUrl String?  @map("opponent_logo_url")
+  whatsappUrl    String?   @map("whatsapp_url")
   matchDate      DateTime  @map("match_date") @db.Date
   matchTime      DateTime? @map("match_time") @db.Time(6)
   location       String?
   championshipId String?   @map("championship_id") @db.Uuid
+  championshipName String? @map("championship_name")
   status         String    @default("Agendada")
   homeScore      Int?      @map("home_score")
   awayScore      Int?      @map("away_score")
@@ -22,8 +25,153 @@ model Match {
   observations   String?
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  championship   Championship? @relation(fields: [championshipId], references: [id], onDelete: SetNull)
 
+  @@index([matchDate], map: "matches_match_date_idx")
+  @@index([championshipId], map: "matches_championship_id_idx")
   @@map("matches")
+}
+
+model Championship {
+  id          String    @id @default(uuid()) @db.Uuid
+  teamName    String    @default("Torinno FC") @map("team_name")
+  name        String
+  imageUrl    String?   @map("image_url")
+  season      String?
+  startDate   DateTime? @map("start_date") @db.Date
+  endDate     DateTime? @map("end_date") @db.Date
+  format      String?
+  status      String    @default("futuro")
+  officialUrl String?   @map("official_url")
+  description String?
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  matches     Match[]
+
+  @@index([teamName, status], map: "championships_team_status_idx")
+  @@map("championships")
+}
+
+model UserProfile {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String
+  nickname      String?
+  email         String?   @unique
+  role          String    @default("player")
+  staffRole     String?   @map("staff_role")
+  accountStatus String    @default("active") @map("account_status")
+  avatarUrl     String?   @map("avatar_url")
+  joinedAt      DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([role], map: "profiles_role_idx")
+  @@map("profiles")
+}
+
+model PlayerProfile {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String?      @map("user_id") @db.Uuid
+  teamName     String       @default("Torinno FC") @map("team_name")
+  fullName     String       @map("full_name")
+  nickname     String
+  position     String
+  shirtNumber  Int          @map("shirt_number")
+  dominantFoot String?      @map("dominant_foot")
+  bio          String?
+  status       String       @default("Ativo")
+  instagram    String?
+  avatarUrl    String?      @map("avatar_url")
+  photoUrl     String?      @map("photo_url")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  stats        PlayerStats?
+
+  @@index([teamName, status], map: "player_profiles_team_status_idx")
+  @@map("player_profiles")
+}
+
+model PlayerStats {
+  id             String        @id @default(uuid()) @db.Uuid
+  playerId       String        @unique @map("player_id") @db.Uuid
+  goals          Int           @default(0)
+  assists        Int           @default(0)
+  ballRecoveries Int           @default(0) @map("ball_recoveries")
+  shots          Int           @default(0)
+  accuratePasses Int           @default(0) @map("accurate_passes")
+  matches        Int           @default(0)
+  wins           Int           @default(0)
+  draws          Int           @default(0)
+  losses         Int           @default(0)
+  yellowCards    Int           @default(0) @map("yellow_cards")
+  redCards       Int           @default(0) @map("red_cards")
+  averageRating  Decimal       @default(0) @map("average_rating") @db.Decimal(3, 1)
+  notes          String?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  player         PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@map("player_stats")
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  targetId    String?  @map("target_id") @db.Uuid
+  action      String
+  beforeValue Json?    @map("before_value")
+  afterValue  Json?    @map("after_value")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([targetId, createdAt], map: "admin_audit_logs_target_idx")
+  @@map("admin_audit_logs")
+}
+
+model Notification {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String?   @map("user_id") @db.Uuid
+  userEmail         String?   @map("user_email")
+  teamName          String    @default("Torinno FC") @map("team_name")
+  type              String
+  title             String
+  message           String
+  relatedEntityType String?   @map("related_entity_type")
+  relatedEntityId   String?   @map("related_entity_id") @db.Uuid
+  actionUrl         String?   @map("action_url")
+  isRead            Boolean   @default(false) @map("is_read")
+  readAt            DateTime? @map("read_at") @db.Timestamptz(6)
+  metadata          Json?
+  scheduledFor      DateTime? @map("scheduled_for") @db.Timestamptz(6)
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz(6)
+  status            String    @default("sent")
+  matchId           String?   @map("match_id") @db.Uuid
+  reminderType      String?   @map("reminder_type")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userEmail, type, relatedEntityType, relatedEntityId, reminderType], map: "notifications_dedupe_idx")
+  @@index([userEmail, isRead, createdAt], map: "notifications_user_read_idx")
+  @@index([status, scheduledFor], map: "notifications_scheduled_idx")
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String?  @map("user_id") @db.Uuid
+  userEmail             String   @unique @map("user_email")
+  matchCreated          Boolean  @default(true) @map("match_created")
+  matchUpdated          Boolean  @default(true) @map("match_updated")
+  matchReminder24h      Boolean  @default(true) @map("match_reminder_24h")
+  matchReminder1h       Boolean  @default(true) @map("match_reminder_1h")
+  championships         Boolean  @default(true)
+  newMembers            Boolean  @default(true) @map("new_members")
+  statistics            Boolean  @default(true)
+  administration        Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("notification_preferences")
 }
 
 model Tryout {
