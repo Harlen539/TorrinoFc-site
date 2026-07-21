@@ -4,6 +4,7 @@ import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
+import { recordActivity } from '../services/activityService.js';
 
 export const playersRouter = Router();
 
@@ -82,6 +83,16 @@ playersRouter.post('/api/players', requirePermission('createPlayer'), asyncRoute
     include: { stats: true },
   });
 
+  await recordActivity({
+    type: 'player_created',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `${player.nickname} foi cadastrado no elenco.`,
+    relatedEntityType: 'player',
+    relatedEntityId: player.id,
+    actionUrl: '/players',
+  });
+
   response.status(201).json({ player: serializePlayer(player) });
 }));
 
@@ -138,6 +149,15 @@ playersRouter.delete('/api/players/:id', requirePermission('removePlayer'), asyn
       beforeValue: existing ? { status: existing.status, nickname: existing.nickname } : null,
       afterValue: { status: 'Removido' },
     },
+  });
+  await recordActivity({
+    type: 'player_removed',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `${existing?.nickname || 'Jogador'} foi removido do elenco.`,
+    relatedEntityType: 'player',
+    relatedEntityId: request.params.id,
+    actionUrl: '/players',
   });
 
   response.status(204).send();

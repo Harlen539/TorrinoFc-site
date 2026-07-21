@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma.js';
 import { serializePlayer } from '../lib/serializers.js';
 import { requireAdminUser, requireAuthenticatedUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { hasPermission } from '../services/settingsService.js';
+import { evaluatePlayerAchievements } from '../services/achievementService.js';
+import { recordActivity } from '../services/activityService.js';
 import {
   findAccessiblePlayer,
   makePerformanceData,
@@ -145,10 +147,27 @@ async function createOrUpdatePerformance(request, response, playerId, performanc
   if (player.user?.email) {
     await notifyStatisticsUpdated(player.user, `${result.player.stats?.goals || 0} gols, ${result.player.stats?.assists || 0} assistencias e ${result.player.stats?.ballRecoveries || 0} roubadas`);
   }
+  const unlockedAchievements = await evaluatePlayerAchievements(playerId, { latestPerformance: result.performance });
+
+  await recordActivity({
+    type: performanceId ? 'performance_updated' : 'performance_created',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || player.nickname,
+    message: `${player.nickname} registrou desempenho contra ${result.performance.match?.awayTeam || 'adversario'}.`,
+    relatedEntityType: 'player',
+    relatedEntityId: playerId,
+    actionUrl: '/performance',
+    metadata: {
+      performanceId: result.performance.id,
+      matchId: result.performance.matchId,
+      achievements: unlockedAchievements.map((item) => item.achievement.key),
+    },
+  });
 
   response.status(performanceId ? 200 : 201).json({
     performance: serializePerformance(result.performance),
     player: serializePlayer(result.player),
+    achievements: unlockedAchievements.map((item) => item.achievement),
   });
 }
 

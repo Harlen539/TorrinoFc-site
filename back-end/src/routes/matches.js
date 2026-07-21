@@ -6,6 +6,7 @@ import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanit
 import { serializeMatch } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyMatchCancelled, notifyMatchCreated, notifyMatchUpdated } from '../services/notificationService.js';
+import { recordActivity } from '../services/activityService.js';
 
 export const matchesRouter = Router();
 
@@ -72,6 +73,15 @@ matchesRouter.post('/api/matches', requirePermission('createMatch'), asyncRoute(
     include: { championship: true },
   });
   await notifyMatchCreated(match);
+  await recordActivity({
+    type: 'match_created',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Partida contra ${match.awayTeam} criada.`,
+    relatedEntityType: 'match',
+    relatedEntityId: match.id,
+    actionUrl: '/matchday',
+  });
 
   response.status(201).json({ match: serializeMatch(match) });
 }));
@@ -90,6 +100,17 @@ matchesRouter.put('/api/matches/:id', requirePermission('editMatch'), asyncRoute
     include: { championship: true },
   });
   await notifyMatchUpdated(match, previous || {});
+  await recordActivity({
+    type: match.status === 'Encerrada' ? 'result_registered' : 'match_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: match.status === 'Encerrada'
+      ? `Resultado registrado: ${match.homeTeam} ${match.homeScore ?? '-'} x ${match.awayScore ?? '-'} ${match.awayTeam}.`
+      : `Partida contra ${match.awayTeam} atualizada.`,
+    relatedEntityType: 'match',
+    relatedEntityId: match.id,
+    actionUrl: '/matchday',
+  });
 
   response.json({ match: serializeMatch(match) });
 }));

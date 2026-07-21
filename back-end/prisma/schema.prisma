@@ -27,6 +27,8 @@ model Match {
   updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   championship   Championship? @relation(fields: [championshipId], references: [id], onDelete: SetNull)
   performances   PlayerMatchPerformance[]
+  attendances    MatchAttendance[]
+  lineup         MatchLineup?
 
   @@index([matchDate], map: "matches_match_date_idx")
   @@index([championshipId], map: "matches_championship_id_idx")
@@ -92,6 +94,9 @@ model PlayerProfile {
   user         UserProfile? @relation(fields: [userId], references: [id], onDelete: SetNull)
   stats        PlayerStats?
   performances PlayerMatchPerformance[]
+  achievements PlayerAchievement[]
+  attendances   MatchAttendance[]
+  lineupPlayers MatchLineupPlayer[]
 
   @@index([teamName, status], map: "player_profiles_team_status_idx")
   @@index([userId], map: "player_profiles_user_id_idx")
@@ -149,6 +154,97 @@ model PlayerMatchPerformance {
   @@index([matchId], map: "player_match_performances_match_id_idx")
   @@index([createdBy], map: "player_match_performances_created_by_idx")
   @@map("player_match_performances")
+}
+
+model Achievement {
+  id          String              @id @default(uuid()) @db.Uuid
+  key         String              @unique
+  name        String
+  description String
+  icon        String              @default("star")
+  category    String              @default("performance")
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  players     PlayerAchievement[]
+
+  @@map("achievements")
+}
+
+model PlayerAchievement {
+  id            String        @id @default(uuid()) @db.Uuid
+  playerId      String        @map("player_id") @db.Uuid
+  achievementId String        @map("achievement_id") @db.Uuid
+  unlockedAt    DateTime      @default(now()) @map("unlocked_at") @db.Timestamptz(6)
+  metadata      Json?
+  player        PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  achievement   Achievement   @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, achievementId], map: "player_achievements_player_achievement_key")
+  @@index([achievementId], map: "player_achievements_achievement_id_idx")
+  @@map("player_achievements")
+}
+
+model MatchAttendance {
+  id          String        @id @default(uuid()) @db.Uuid
+  matchId     String        @map("match_id") @db.Uuid
+  playerId    String        @map("player_id") @db.Uuid
+  status      String
+  notes       String?
+  respondedAt DateTime?     @map("responded_at") @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  match       Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player      PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId], map: "match_attendances_match_player_key")
+  @@index([playerId, status], map: "match_attendances_player_status_idx")
+  @@map("match_attendances")
+}
+
+model MatchLineup {
+  id         String              @id @default(uuid()) @db.Uuid
+  matchId    String              @unique @map("match_id") @db.Uuid
+  formation  String              @default("4-3-3")
+  captainId  String?             @map("captain_id") @db.Uuid
+  createdBy  String?             @map("created_by") @db.Uuid
+  notes      String?
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  match      Match               @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  players    MatchLineupPlayer[]
+
+  @@map("match_lineups")
+}
+
+model MatchLineupPlayer {
+  id       String        @id @default(uuid()) @db.Uuid
+  lineupId String        @map("lineup_id") @db.Uuid
+  playerId String        @map("player_id") @db.Uuid
+  role     String
+  position String?
+  sortOrder Int          @default(0) @map("sort_order")
+  lineup   MatchLineup   @relation(fields: [lineupId], references: [id], onDelete: Cascade)
+  player   PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([lineupId, playerId], map: "match_lineup_players_lineup_player_key")
+  @@index([playerId], map: "match_lineup_players_player_id_idx")
+  @@map("match_lineup_players")
+}
+
+model ActivityLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  type              String
+  actorId           String?  @map("actor_id") @db.Uuid
+  actorName         String?  @map("actor_name")
+  message           String
+  relatedEntityType String?  @map("related_entity_type")
+  relatedEntityId   String?  @map("related_entity_id") @db.Uuid
+  actionUrl         String?  @map("action_url")
+  metadata          Json?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt], map: "activity_logs_created_at_idx")
+  @@index([relatedEntityType, relatedEntityId], map: "activity_logs_related_idx")
+  @@map("activity_logs")
 }
 
 model UserSetting {

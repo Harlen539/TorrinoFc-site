@@ -126,3 +126,64 @@ export function serializeTryout(tryout) {
     updatedAt: tryout.updatedAt,
   };
 }
+
+export function serializeAchievement(item) {
+  const achievement = item.achievement || item;
+  return {
+    id: achievement.id,
+    key: achievement.key,
+    name: achievement.name,
+    description: achievement.description,
+    icon: achievement.icon,
+    category: achievement.category,
+    unlockedAt: item.unlockedAt || null,
+    metadata: item.metadata || {},
+  };
+}
+
+export function serializeAttendance(item) {
+  return {
+    id: item.id,
+    matchId: item.matchId,
+    playerId: item.playerId,
+    status: item.status,
+    notes: item.notes || '',
+    respondedAt: item.respondedAt,
+    player: item.player ? serializePlayer(item.player) : null,
+  };
+}
+
+export function serializeLineup(lineup) {
+  if (!lineup) return null;
+
+  return {
+    id: lineup.id,
+    matchId: lineup.matchId,
+    formation: lineup.formation,
+    captainId: lineup.captainId || '',
+    notes: lineup.notes || '',
+    starters: (lineup.players || [])
+      .filter((item) => item.role === 'starter')
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item) => ({ ...serializePlayer(item.player), lineupPosition: item.position || '' })),
+    bench: (lineup.players || [])
+      .filter((item) => item.role === 'bench')
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item) => ({ ...serializePlayer(item.player), lineupPosition: item.position || '' })),
+  };
+}
+
+export function serializeActivity(item) {
+  return {
+    id: item.id,
+    type: item.type,
+    actorId: item.actorId || '',
+    actorName: item.actorName || '',
+    message: item.message,
+    relatedEntityType: item.relatedEntityType || '',
+    relatedEntityId: item.relatedEntityId || '',
+    actionUrl: item.actionUrl || '',
+    metadata: item.metadata || {},
+    createdAt: item.createdAt,
+  };
+}

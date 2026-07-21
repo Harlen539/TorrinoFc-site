@@ -273,3 +273,48 @@ export function updateNotificationPreferences(userEmail, preferences) {
     userEmail,
   }).then((data) => data.preferences);
 }
+
+export function fetchActivities({ limit = 20 } = {}) {
+  return request(`/api/activities?limit=${encodeURIComponent(limit)}`).then((data) => data.activities || []);
+}
+
+export function fetchAchievements() {
+  return request('/api/achievements').then((data) => data.achievements || []);
+}
+
+export function fetchPlayerAchievements(playerId) {
+  return request(`/api/players/${playerId}/achievements`).then((data) => data.achievements || []);
+}
+
+export function fetchMatchday() {
+  return request('/api/matchday');
+}
+
+export function fetchMatchAttendance(matchId) {
+  return request(`/api/matches/${matchId}/attendance`).then((data) => data.attendances || []);
+}
+
+export function updateMyAttendance(matchId, payload) {
+  return request(`/api/matches/${matchId}/attendance/me`, {
+    method: 'PUT',
+    body: payload,
+  }).then((data) => data.attendance);
+}
+
+export function updateMatchAttendance(matchId, playerId, payload) {
+  return request(`/api/matches/${matchId}/attendance/${playerId}`, {
+    method: 'PUT',
+    body: payload,
+  }).then((data) => data.attendance);
+}
+
+export function fetchMatchLineup(matchId) {
+  return request(`/api/matches/${matchId}/lineup`).then((data) => data.lineup);
+}
+
+export function updateMatchLineup(matchId, payload) {
+  return request(`/api/matches/${matchId}/lineup`, {
+    method: 'PUT',
+    body: payload,
+  }).then((data) => data.lineup);
+}

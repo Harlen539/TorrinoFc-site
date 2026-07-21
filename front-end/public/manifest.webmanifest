@@ -1,0 +1,23 @@
+{
+  "name": "TorinnoFC",
+  "short_name": "TorinnoFC",
+  "description": "Plataforma oficial do TorinnoFC.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070a10",
+  "theme_color": "#4a0712",
+  "icons": [
+    {
+      "src": "/assets/logo-torrino.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/logo-torrino.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

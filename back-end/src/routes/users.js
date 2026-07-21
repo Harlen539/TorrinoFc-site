@@ -6,6 +6,7 @@ import { serializePlayer, serializeUserProfile } from '../lib/serializers.js';
 import { requireAdminUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { ensurePlayerForUser } from '../services/playerSyncService.js';
 import { notifyMemberJoined, notifyRoleUpdated } from '../services/notificationService.js';
+import { recordActivity } from '../services/activityService.js';
 
 export const usersRouter = Router();
 
@@ -76,6 +77,15 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
 
   if (!existing) {
     await notifyMemberJoined(result.profile);
+    await recordActivity({
+      type: 'member_joined',
+      actorId: result.profile.id,
+      actorName: result.profile.nickname || result.profile.name,
+      message: `${result.profile.nickname || result.profile.name} entrou para o clube.`,
+      relatedEntityType: 'user',
+      relatedEntityId: result.profile.id,
+      actionUrl: '/players',
+    });
   }
 
   response.status(201).json({
@@ -129,6 +139,15 @@ usersRouter.patch('/api/users/:id/role', requirePermission('managePermissions'),
     },
   });
   await notifyRoleUpdated(updated, nextRole);
+  await recordActivity({
+    type: nextRole === 'admin' ? 'admin_promoted' : 'admin_removed',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `${updated.nickname || updated.name} agora e ${updated.staffRole || (nextRole === 'admin' ? 'Admin' : 'Jogador')}.`,
+    relatedEntityType: 'user',
+    relatedEntityId: updated.id,
+    actionUrl: '/settings',
+  });
 
   response.json({ user: serializeUserProfile(updated) });
 }));

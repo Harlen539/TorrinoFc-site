@@ -44,9 +44,14 @@ import {
   deleteTryout as apiDeleteTryout,
   deleteMyPerformance as apiDeleteMyPerformance,
   downloadPerformanceReport,
+  fetchActivities,
+  fetchAchievements,
   fetchChampionships,
   fetchClubSettings,
   fetchMatches,
+  fetchMatchday,
+  fetchMatchAttendance,
+  fetchMatchLineup,
   fetchMyPerformance,
   fetchMySettings,
   fetchNotificationPreferences,
@@ -61,7 +66,9 @@ import {
   syncUser as apiSyncUser,
   updateChampionship as apiUpdateChampionship,
   updateClubSettings,
+  updateMatchLineup,
   updateMatch as apiUpdateMatch,
+  updateMyAttendance,
   updateMyPerformance as apiUpdateMyPerformance,
   updateMySettings,
   updateNotificationPreferences,
@@ -91,9 +98,11 @@ const navItems = [
   { id: 'players', label: 'Jogadores', icon: Users },
   { id: 'tryouts', label: 'Peneiras', icon: UserPlus },
   { id: 'matches', label: 'Partidas', icon: Flag },
+  { id: 'matchday', label: 'Matchday', icon: Clock },
   { id: 'calendar', label: 'Calendario', icon: CalendarDays },
   { id: 'notifications', label: 'Notificacoes', icon: Bell },
   { id: 'ranking', label: 'Ranking', icon: Trophy },
+  { id: 'compare', label: 'Comparar', icon: BarChart3 },
   { id: 'team', label: 'Time', icon: Shield },
   { id: 'championships', label: 'Campeonatos', icon: Crown },
   { id: 'admin', label: 'Admin', icon: ShieldCheck },
@@ -441,9 +450,12 @@ function App() {
   const [serverState, setServerState] = useState({ loading: true, error: '' });
   const [notificationsState, setNotificationsState] = useState({ loading: false, error: '', items: [], unreadCount: 0 });
   const [notificationPreferences, setNotificationPreferences] = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [achievements, setAchievements] = useState([]);
   const [tryouts, setTryouts] = useState(initialTryouts);
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
+  const [celebrating, setCelebrating] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBooting(false), 1850);
@@ -576,6 +588,37 @@ function App() {
       window.clearInterval(timer);
     };
   }, [session?.email]);
+
+  useEffect(() => {
+    if (!session) {
+      setActivities([]);
+      setAchievements([]);
+      return undefined;
+    }
+
+    let active = true;
+    const loadExperienceData = async ({ silent = false } = {}) => {
+      try {
+        const [nextActivities, nextAchievements] = await Promise.all([
+          fetchActivities({ limit: 18 }).catch(() => []),
+          fetchAchievements().catch(() => []),
+        ]);
+        if (!active) return;
+        setActivities(nextActivities);
+        setAchievements(nextAchievements);
+      } catch (error) {
+        if (!silent && import.meta.env.DEV) console.error('[experience]', error);
+      }
+    };
+
+    loadExperienceData();
+    const timer = window.setInterval(() => loadExperienceData({ silent: true }), 12000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.id]);
 
   if (booting) {
     return <Preloader />;
@@ -755,6 +798,10 @@ function App() {
 
   const notify = (message) => {
     setToast(message);
+    if (/vitoria|vit[oó]ria|promov|conquista|sequencia|sequ[eê]ncia/i.test(message)) {
+      setCelebrating(true);
+      window.setTimeout(() => setCelebrating(false), 1600);
+    }
     window.setTimeout(() => setToast(''), 2200);
   };
 
@@ -941,12 +988,15 @@ function App() {
         refreshNotifications={refreshNotifications}
         notificationPreferences={notificationPreferences}
         saveNotificationPreferences={saveNotificationPreferences}
+        activities={activities}
+        achievements={achievements}
         tryouts={tryouts}
         setTryouts={setTryouts}
         selectedPlayerId={selectedPlayerId}
         setSelectedPlayerId={setSelectedPlayerId}
         notify={notify}
       />
+      {celebrating && <CelebrationBurst />}
       {toast && <Toast message={toast} />}
     </DashboardShell>
   );
@@ -1242,7 +1292,7 @@ function DashboardShell({ children, user, view, setView, onLogout, notifications
             <strong>{pageTitle(view)}</strong>
           </div>
           <div className="notification-wrap">
-            <button className="notification" type="button" onClick={() => setNotificationsOpen(!notificationsOpen)} aria-label="Abrir notificacoes">
+            <button className={`notification ${unreadCount > 0 ? 'has-unread' : ''}`} type="button" onClick={() => setNotificationsOpen(!notificationsOpen)} aria-label="Abrir notificacoes">
               <Bell size={18} />
               {unreadCount > 0 && <small>{badgeLabel}</small>}
             </button>
@@ -1464,19 +1514,21 @@ function PageRouter(props) {
     'player-detail': <PlayerDetail {...props} />,
     tryouts: <Tryouts {...props} />,
     matches: <Matches {...props} />,
+    matchday: <Matchday {...props} />,
     calendar: <Calendar {...props} />,
     notifications: <NotificationsPage {...props} />,
     ranking: <Ranking {...props} />,
+    compare: <PlayerCompare {...props} />,
     team: <Team {...props} />,
     championships: <Championships {...props} />,
     admin: <AdminPanel {...props} />,
     settings: <SettingsPage {...props} />,
   };
 
-  return pages[view] || <Dashboard {...props} />;
+  return <div className="page-transition" key={view}>{pages[view] || <Dashboard {...props} />}</div>;
 }
 
-function Dashboard({ user, players, matches, championships = [], setView, notify }) {
+function Dashboard({ user, players, matches, championships = [], setView, notify, activities = [] }) {
   const endedMatches = matches.filter((match) => match.status === 'Encerrada');
   const teamStats = getTeamStats(players, matches);
   const myPlayer = findPlayerForUser(user, players);
@@ -1507,6 +1559,8 @@ function Dashboard({ user, players, matches, championships = [], setView, notify
         </div>
 
         <TeamInsights stats={teamStats} players={players} setView={setView} />
+
+        <ActivityFeed activities={activities} setView={setView} />
 
         <article className="panel dashboard-panel">
           <div className="dashboard-panel-head">
@@ -1671,6 +1725,34 @@ function getTeamStats(players, matches) {
   };
 }
 
+function calculatePlayerOverall(player) {
+  const stats = player?.stats || {};
+  const rating = Number(stats.rating || 0);
+  const matches = Number(stats.matches || 0);
+  const goals = Number(stats.goals || 0);
+  const assists = Number(stats.assists || 0);
+  const recoveries = Number(stats.recoveries || 0);
+  const wins = Number(stats.wins || 0);
+  const consistency = matches ? Math.min((matches / 25) * 14, 14) : 0;
+  const production = Math.min((goals + assists) * 1.6, 20);
+  const defense = Math.min((recoveries + Number(stats.tackles || 0) + Number(stats.interceptions || 0)) * 0.5, 12);
+  const winImpact = matches ? Math.min((wins / matches) * 10, 10) : 0;
+  const ratingScore = Math.min(rating * 4.3, 43);
+  return Math.max(1, Math.min(99, Math.round(1 + ratingScore + consistency + production + defense + winImpact)));
+}
+
+function localAchievementPreview(player) {
+  const stats = player?.stats || {};
+  return [
+    Number(stats.goals || 0) >= 1 && 'Primeiro gol',
+    Number(stats.assists || 0) >= 1 && 'Primeira assistencia',
+    Number(stats.matches || 0) >= 10 && '10 partidas',
+    Number(stats.matches || 0) >= 25 && '25 partidas',
+    Number(stats.rating || 0) >= 9 && 'Nota acima de 9',
+    Number(stats.recoveries || 0) + Number(stats.tackles || 0) + Number(stats.interceptions || 0) >= 25 && 'Muralha defensiva',
+  ].filter(Boolean);
+}
+
 function TeamInsights({ stats, players, setView }) {
   const positionEntries = Object.entries(stats.positionCounts)
     .sort((a, b) => b[1] - a[1])
@@ -1802,6 +1884,46 @@ function TeamInsights({ stats, players, setView }) {
         </div>
       </article>
     </div>
+  );
+}
+
+function ActivityFeed({ activities, setView }) {
+  return (
+    <article className="panel dashboard-panel activity-feed">
+      <div className="dashboard-panel-head">
+        <div>
+          <span>Clube</span>
+          <h3>Atividades recentes</h3>
+        </div>
+        <button className="action-link" type="button" onClick={() => setView('notifications')}>
+          Notificacoes
+        </button>
+      </div>
+      <div className="dashboard-list">
+        {activities.slice(0, 6).map((activity) => (
+          <button
+            className="dashboard-list-row activity-row"
+            type="button"
+            key={activity.id}
+            onClick={() => {
+              const target = String(activity.actionUrl || '').replace('/', '');
+              if (target) setView(target);
+            }}
+          >
+            <div className={`icon-tile ${activity.type.includes('achievement') ? 'gold' : 'blue'}`}>
+              {activity.type.includes('achievement') ? <Trophy size={16} /> : <Activity size={16} />}
+            </div>
+            <div>
+              <strong>{activity.message}</strong>
+              <span>{formatDateTime(activity.createdAt)}</span>
+            </div>
+          </button>
+        ))}
+        {activities.length === 0 && (
+          <EmptyState icon={Activity} title="Nenhuma atividade registrada." description="Eventos reais do clube aparecerao aqui quando forem salvos no backend." />
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -3133,11 +3255,42 @@ function MatchModal({ modal, championships, isAdmin, saving, onClose, onSave, on
   );
 }
 
-function Ranking({ players }) {
-  const ranked = [...players].sort((a, b) => b.stats.goals + b.stats.assists - (a.stats.goals + a.stats.assists));
+function Ranking({ players, championships = [] }) {
+  const [category, setCategory] = useState('overall');
+  const [position, setPosition] = useState('Todos');
+  const [period, setPeriod] = useState('temporada');
+  const categories = {
+    overall: { label: 'Geral', value: (player) => calculatePlayerOverall(player), suffix: 'OVR' },
+    goals: { label: 'Gols', value: (player) => player.stats.goals },
+    assists: { label: 'Assistencias', value: (player) => player.stats.assists },
+    recoveries: { label: 'Roubadas', value: (player) => player.stats.recoveries },
+    rating: { label: 'Nota media', value: (player) => player.stats.rating },
+    matches: { label: 'Partidas', value: (player) => player.stats.matches },
+    wins: { label: 'Vitorias', value: (player) => player.stats.wins },
+    participation: { label: 'Participacao em gols', value: (player) => player.stats.goals + player.stats.assists },
+  };
+  const filtered = players.filter((player) => position === 'Todos' || player.position === position);
+  const ranked = [...filtered].sort((a, b) => categories[category].value(b) - categories[category].value(a));
   return (
     <section>
-      <SectionHeader eyebrow="Ranking" title="Desempenho do time" />
+      <SectionHeader eyebrow="Ranking" title="Desempenho avancado" />
+      <div className="toolbar ranking-toolbar">
+        <select value={category} onChange={(event) => setCategory(event.target.value)}>
+          {Object.entries(categories).map(([key, item]) => <option value={key} key={key}>{item.label}</option>)}
+        </select>
+        <select value={period} onChange={(event) => setPeriod(event.target.value)}>
+          <option value="temporada">Temporada</option>
+          <option value="mes">Mes atual</option>
+          <option value="ultimas">Ultimas partidas</option>
+        </select>
+        <select value={position} onChange={(event) => setPosition(event.target.value)}>
+          <option>Todos</option>
+          {positions.map((item) => <option key={item}>{item}</option>)}
+        </select>
+        <select disabled>
+          <option>{championships[0]?.name || 'Todos os campeonatos'}</option>
+        </select>
+      </div>
       <div className="ranking-list">
         {ranked.map((player, index) => (
           <article className={`ranking-card top-${index + 1}`} key={player.id}>
@@ -3148,11 +3301,13 @@ function Ranking({ players }) {
               <span>
                 Camisa {player.shirt} | {player.position}
               </span>
+              <small>{period === 'temporada' ? 'Temporada atual' : 'Filtro preparado para historico por partida'}</small>
             </div>
             <div className="ranking-stat">
-              <b>{player.stats.goals + player.stats.assists}</b>
-              <small>G+A</small>
+              <b>{categories[category].value(player)}</b>
+              <small>{categories[category].suffix || categories[category].label}</small>
             </div>
+            <span className={`trend ${index < 3 ? 'up' : 'stable'}`}>{index < 3 ? '+1' : '0'}</span>
           </article>
         ))}
         {ranked.length === 0 && <EmptyState icon={Trophy} title="Nenhum jogador cadastrado no elenco." description="O ranking aparece quando houver estatisticas reais." />}
@@ -3176,6 +3331,87 @@ function Team({ players }) {
         <StatCard icon={Shield} value="2026" label="Fundacao" />
         <StatCard icon={Users} value={players.length} label="Atletas" />
         <StatCard icon={Trophy} value="3" label="Frentes" />
+      </div>
+    </section>
+  );
+}
+
+function PlayerCompare({ players }) {
+  const [leftId, setLeftId] = useState(players[0]?.id || '');
+  const [rightId, setRightId] = useState(players[1]?.id || players[0]?.id || '');
+  const left = players.find((player) => player.id === leftId) || players[0];
+  const right = players.find((player) => player.id === rightId) || players[1] || players[0];
+  const metrics = [
+    ['matches', 'Partidas', (player) => player.stats.matches],
+    ['goals', 'Gols', (player) => player.stats.goals],
+    ['assists', 'Assistencias', (player) => player.stats.assists],
+    ['recoveries', 'Roubadas', (player) => player.stats.recoveries],
+    ['shots', 'Finalizacoes', (player) => player.stats.shots],
+    ['passes', 'Passes certos', (player) => player.stats.passes],
+    ['tackles', 'Desarmes', (player) => player.stats.tackles],
+    ['interceptions', 'Interceptacoes', (player) => player.stats.interceptions],
+    ['rating', 'Nota media', (player) => player.stats.rating],
+    ['wins', 'Vitorias', (player) => player.stats.wins],
+    ['participation', 'Participacao em gols', (player) => player.stats.goals + player.stats.assists],
+    ['overall', 'Overall', calculatePlayerOverall],
+  ];
+
+  if (players.length < 2) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Comparacao" title="Jogadores" />
+        <EmptyState icon={BarChart3} title="Cadastre ao menos dois jogadores." description="A comparacao usa somente estatisticas reais do elenco." />
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <SectionHeader eyebrow="Comparacao" title="Jogador x jogador" />
+      <div className="toolbar compare-toolbar">
+        <select value={left?.id || ''} onChange={(event) => setLeftId(event.target.value)}>
+          {players.map((player) => <option key={player.id} value={player.id}>{player.nickname}</option>)}
+        </select>
+        <select value={right?.id || ''} onChange={(event) => setRightId(event.target.value)}>
+          {players.map((player) => <option key={player.id} value={player.id}>{player.nickname}</option>)}
+        </select>
+      </div>
+      <div className="matchday-grid">
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Radar</span><h3>{left.nickname} x {right.nickname}</h3></div>
+          </div>
+          <ApexChart
+            className="chart-box"
+            options={{
+              chart: { type: 'radar', toolbar: { show: false }, foreColor: '#99a4b8' },
+              series: [
+                { name: left.nickname, data: [left.stats.goals, left.stats.assists, left.stats.recoveries, left.stats.rating * 10, calculatePlayerOverall(left)] },
+                { name: right.nickname, data: [right.stats.goals, right.stats.assists, right.stats.recoveries, right.stats.rating * 10, calculatePlayerOverall(right)] },
+              ],
+              labels: ['Gols', 'Assist.', 'Roubadas', 'Nota', 'Overall'],
+              colors: ['#d4a24c', '#8a1024'],
+              yaxis: { show: false },
+              fill: { opacity: 0.15 },
+              stroke: { width: 2 },
+            }}
+          />
+        </article>
+        <article className="panel dashboard-panel">
+          <div className="comparison-table">
+            {metrics.map(([key, label, getter]) => {
+              const leftValue = getter(left);
+              const rightValue = getter(right);
+              return (
+                <div className="comparison-row" key={key}>
+                  <b className={leftValue >= rightValue ? 'best' : ''}>{leftValue}</b>
+                  <span>{label}</span>
+                  <b className={rightValue >= leftValue ? 'best' : ''}>{rightValue}</b>
+                </div>
+              );
+            })}
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -4069,24 +4305,402 @@ function UserRoleRow({ account, disabled, onChange }) {
 
 function PlayerDetail({ players, selectedPlayerId }) {
   const player = players.find((item) => item.id === selectedPlayerId) || players[0];
+  if (!player) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Perfil oficial" title="Jogador" />
+        <EmptyState icon={User} title="Nenhum jogador cadastrado." description="O card oficial aparece quando houver atleta no elenco." />
+      </section>
+    );
+  }
+
+  const overall = calculatePlayerOverall(player);
+  const achievements = localAchievementPreview(player);
+  const goalParticipation = player.stats.goals + player.stats.assists;
+  const recentStreak = player.stats.matches ? `${player.stats.wins}V ${player.stats.draws || 0}E ${player.stats.losses}D` : 'Sem jogos';
+
   return (
-    <section className="profile-layout">
-      <div className="profile-hero">
+    <section className="profile-layout official-player-profile">
+      <div className="profile-hero official-card">
         <div className="shirt-number">#{player.shirt}</div>
         <div className="avatar big">{player.avatar}</div>
         <div>
           <span>{player.position}</span>
           <h2>{player.nickname}</h2>
-          <p>{player.bio}</p>
+          <p>{player.fullName} | Pe dominante: {player.foot || 'Nao informado'} | Status: {player.status}</p>
+        </div>
+        <div className="overall-badge">
+          <strong>{overall}</strong>
+          <span>OVR</span>
         </div>
       </div>
       <div className="stats-grid compact">
+        <StatCard icon={Flag} value={player.stats.matches} label="Partidas" />
         <StatCard icon={Trophy} value={player.stats.goals} label="Gols" />
         <StatCard icon={BarChart3} value={player.stats.assists} label="Assistencias" />
         <StatCard icon={Activity} value={player.stats.recoveries} label="Roubadas" />
         <StatCard icon={Star} value={player.stats.rating} label="Nota media" />
+        <StatCard icon={Sparkles} value={goalParticipation} label="Participacao em gols" />
+      </div>
+      <div className="matchday-grid">
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Forma</span><h3>Radar real</h3></div>
+            <small>{recentStreak}</small>
+          </div>
+          <ApexChart
+            className="chart-box"
+            options={{
+              chart: { type: 'radar', toolbar: { show: false }, foreColor: '#99a4b8' },
+              series: [{
+                name: player.nickname,
+                data: [
+                  Math.min(player.stats.rating * 10, 100),
+                  Math.min(player.stats.goals * 12, 100),
+                  Math.min(player.stats.assists * 12, 100),
+                  Math.min(player.stats.recoveries * 5, 100),
+                  Math.min(player.stats.passes * 2, 100),
+                ],
+              }],
+              labels: ['Nota', 'Gols', 'Assist.', 'Roubadas', 'Passes'],
+              colors: ['#d4a24c'],
+              stroke: { width: 2 },
+              fill: { opacity: 0.18 },
+              markers: { size: 3 },
+              yaxis: { show: false, min: 0, max: 100 },
+            }}
+          />
+        </article>
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Clube</span><h3>Conquistas</h3></div>
+          </div>
+          <div className="achievement-list">
+            {achievements.map((achievement) => <span key={achievement}><Trophy size={14} /> {achievement}</span>)}
+            {achievements.length === 0 && <EmptyState icon={Trophy} title="Nenhuma conquista desbloqueada." description="Conquistas aparecem conforme os dados reais forem registrados." />}
+          </div>
+        </article>
       </div>
     </section>
+  );
+}
+
+function useCountdown(match) {
+  const [label, setLabel] = useState('');
+
+  useEffect(() => {
+    if (!match?.dateKey) {
+      setLabel('Sem partida');
+      return undefined;
+    }
+
+    const update = () => {
+      const target = new Date(`${match.dateKey}T${match.time || '00:00'}`);
+      const diff = target.getTime() - Date.now();
+      if (Number.isNaN(target.getTime())) {
+        setLabel('Horario a definir');
+        return;
+      }
+      if (diff <= 0) {
+        setLabel(match.status === 'Encerrada' ? 'Partida encerrada' : 'Em andamento');
+        return;
+      }
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      setLabel(`${days}d ${hours}h ${minutes}min`);
+    };
+
+    update();
+    const timer = window.setInterval(update, 30000);
+    return () => window.clearInterval(timer);
+  }, [match?.dateKey, match?.time, match?.status]);
+
+  return label;
+}
+
+function Matchday({ user, players, matches, saveMatch, setView, notify }) {
+  const fallbackMatch = matches.find((match) => match.status === 'Em andamento')
+    || matches.find((match) => match.status === 'Agendada')
+    || matches[0];
+  const [matchday, setMatchday] = useState({ match: fallbackMatch || null, attendances: [], lineup: null });
+  const [selectedMatchId, setSelectedMatchId] = useState(fallbackMatch?.id || '');
+  const [attendanceSaving, setAttendanceSaving] = useState('');
+  const [lineupDraft, setLineupDraft] = useState({ formation: '4-3-3', captainId: '', players: [] });
+  const [scoreDraft, setScoreDraft] = useState(fallbackMatch?.score && fallbackMatch.score !== '-' ? fallbackMatch.score : '0 x 0');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const isAdmin = user?.role === 'admin';
+  const match = matches.find((item) => item.id === selectedMatchId) || matchday.match || fallbackMatch;
+  const countdown = useCountdown(match);
+  const ownPlayer = findPlayerForUser(user, players);
+  const ownAttendance = matchday.attendances.find((item) => item.playerId === ownPlayer?.id);
+  const confirmed = matchday.attendances.filter((item) => item.status === 'confirmed');
+  const maybe = matchday.attendances.filter((item) => item.status === 'maybe');
+  const unavailable = matchday.attendances.filter((item) => item.status === 'unavailable');
+
+  const load = async (matchId = selectedMatchId) => {
+    setLoading(true);
+    try {
+      if (matchId) {
+        const [attendances, lineup] = await Promise.all([
+          fetchMatchAttendance(matchId).catch(() => []),
+          fetchMatchLineup(matchId).catch(() => null),
+        ]);
+        setMatchday({ match: matches.find((item) => item.id === matchId) || fallbackMatch || null, attendances, lineup });
+        setLineupDraft({
+          formation: lineup?.formation || '4-3-3',
+          captainId: lineup?.captainId || '',
+          players: [
+            ...(lineup?.starters || []).map((player) => ({ playerId: player.id, role: 'starter', position: player.lineupPosition || player.position })),
+            ...(lineup?.bench || []).map((player) => ({ playerId: player.id, role: 'bench', position: player.lineupPosition || player.position })),
+          ],
+        });
+      } else {
+        const payload = await fetchMatchday().catch(() => ({ match: fallbackMatch || null, attendances: [], lineup: null }));
+        setMatchday(payload);
+        if (payload.match?.id) setSelectedMatchId(payload.match.id);
+      }
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel carregar o Matchday.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load(selectedMatchId);
+  }, [selectedMatchId]);
+
+  const updateAttendance = async (status) => {
+    if (!match?.id) return;
+    setAttendanceSaving(status);
+    try {
+      await updateMyAttendance(match.id, { status });
+      await load(match.id);
+      notify('Presenca atualizada.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel atualizar presenca.');
+    } finally {
+      setAttendanceSaving('');
+    }
+  };
+
+  const setLineupRole = (playerId, role) => {
+    setLineupDraft((current) => {
+      const without = current.players.filter((item) => item.playerId !== playerId);
+      if (!role) return { ...current, players: without };
+      const player = players.find((item) => item.id === playerId);
+      return {
+        ...current,
+        players: [...without, { playerId, role, position: player?.position || '' }],
+      };
+    });
+  };
+
+  const saveLineup = async () => {
+    if (!match?.id) return;
+    setSaving(true);
+    try {
+      const lineup = await updateMatchLineup(match.id, lineupDraft);
+      setMatchday((current) => ({ ...current, lineup }));
+      notify('Escalacao salva.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel salvar escalacao.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveScore = async () => {
+    if (!match?.id) return;
+    setSaving(true);
+    try {
+      await saveMatch({ ...match, score: scoreDraft, status: 'Encerrada' }, match.id);
+      notify('Resultado registrado. Vitoria comemorada se o placar favorecer o TorinnoFC.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel salvar resultado.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const generateLineupImage = () => {
+    const starters = lineupDraft.players
+      .filter((item) => item.role === 'starter')
+      .map((item) => players.find((player) => player.id === item.playerId))
+      .filter(Boolean);
+    const rows = starters.map((player, index) => `<text x="40" y="${150 + index * 34}" fill="#fff7d6" font-size="20">#${player.shirt} ${player.nickname} - ${player.position}</text>`).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350"><rect width="1080" height="1350" fill="#070a10"/><rect x="40" y="40" width="1000" height="1270" rx="28" fill="#111827" stroke="#d4a24c" stroke-width="4"/><text x="40" y="100" fill="#d4a24c" font-size="28">TorinnoFC Matchday</text><text x="40" y="132" fill="#ffffff" font-size="44">${match?.home || 'TorinnoFC'} x ${match?.away || 'Adversario'}</text><text x="40" y="180" fill="#99a4b8" font-size="24">Formacao ${lineupDraft.formation}</text>${rows}</svg>`;
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `escalacao-${match?.away || 'matchday'}.svg`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Dia de jogo" title="Matchday" />
+        <SkeletonGrid />
+      </section>
+    );
+  }
+
+  if (!match) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Dia de jogo" title="Matchday" />
+        <EmptyState icon={Flag} title="Nenhuma partida cadastrada." description="Quando uma partida real for criada, o Matchday aparece aqui." />
+      </section>
+    );
+  }
+
+  return (
+    <section className="matchday-page">
+      <div className="section-title-actions">
+        <SectionHeader eyebrow="Dia de jogo" title="Matchday" />
+        <select value={selectedMatchId} onChange={(event) => setSelectedMatchId(event.target.value)}>
+          {matches.map((item) => <option key={item.id} value={item.id}>{item.dateKey} | {item.away}</option>)}
+        </select>
+      </div>
+
+      <div className={`panel matchday-hero ${match.status === 'Em andamento' ? 'live' : ''}`}>
+        <div className="matchday-team">
+          <img src={logo} alt="TorinnoFC" />
+          <strong>{match.home}</strong>
+        </div>
+        <div className="matchday-score">
+          <span>{match.championship}</span>
+          <b>{match.score || '-'}</b>
+          <small>{match.status === 'Em andamento' ? 'Ao vivo' : match.status}</small>
+        </div>
+        <div className="matchday-team">
+          {match.opponentLogo ? <img src={match.opponentLogo} alt={match.away} /> : <div className="avatar big">{getInitials(match.away)}</div>}
+          <strong>{match.away}</strong>
+        </div>
+      </div>
+
+      <div className="dashboard-metrics">
+        <StatCard icon={CalendarDays} value={match.dateKey} label="Data" />
+        <StatCard icon={Clock} value={match.time || 'A definir'} label="Horario" />
+        <StatCard icon={Flag} value={countdown} label="Contagem" />
+        <StatCard icon={Users} value={confirmed.length} label="Confirmados" />
+      </div>
+
+      <div className="matchday-grid">
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Presenca</span><h3>Minha resposta</h3></div>
+          </div>
+          <div className="segmented-actions">
+            {[
+              ['confirmed', 'Confirmado'],
+              ['maybe', 'Talvez'],
+              ['unavailable', 'Indisponivel'],
+            ].map(([status, label]) => (
+              <button
+                key={status}
+                className={`button ${ownAttendance?.status === status ? 'primary' : 'secondary'}`}
+                type="button"
+                disabled={attendanceSaving === status}
+                onClick={() => updateAttendance(status)}
+              >
+                {attendanceSaving === status ? 'Salvando...' : label}
+              </button>
+            ))}
+          </div>
+          <div className="attendance-columns">
+            <AttendanceList title="Confirmados" items={confirmed} />
+            <AttendanceList title="Talvez" items={maybe} />
+            <AttendanceList title="Indisponiveis" items={unavailable} />
+          </div>
+        </article>
+
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Escalacao</span><h3>{lineupDraft.formation}</h3></div>
+            <button className="action-link" type="button" onClick={generateLineupImage}>Gerar imagem</button>
+          </div>
+          <LineupList title="Titulares" players={matchday.lineup?.starters || []} captainId={matchday.lineup?.captainId} />
+          <LineupList title="Reservas" players={matchday.lineup?.bench || []} captainId={matchday.lineup?.captainId} />
+          {!matchday.lineup && <EmptyState icon={Users} title="Escalacao ainda nao definida." description="Somente administradores podem montar a escalacao." />}
+        </article>
+      </div>
+
+      {isAdmin && (
+        <div className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Admin</span><h3>Montar Matchday</h3></div>
+          </div>
+          <div className="form-grid">
+            <Field label="Formacao" value={lineupDraft.formation} onChange={(formation) => setLineupDraft({ ...lineupDraft, formation })} />
+            <Field label="Placar" value={scoreDraft} onChange={setScoreDraft} />
+          </div>
+          <label className="field">
+            <span>Capitao</span>
+            <select value={lineupDraft.captainId} onChange={(event) => setLineupDraft({ ...lineupDraft, captainId: event.target.value })}>
+              <option value="">Sem capitao</option>
+              {players.map((player) => <option key={player.id} value={player.id}>{player.nickname}</option>)}
+            </select>
+          </label>
+          <div className="lineup-editor">
+            {players.map((player) => {
+              const entry = lineupDraft.players.find((item) => item.playerId === player.id);
+              return (
+                <div className="lineup-editor-row" key={player.id}>
+                  <span>#{player.shirt} {player.nickname}</span>
+                  <select value={entry?.role || ''} onChange={(event) => setLineupRole(player.id, event.target.value)}>
+                    <option value="">Fora</option>
+                    <option value="starter">Titular</option>
+                    <option value="bench">Reserva</option>
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+          <div className="modal-actions">
+            <button className="button primary" type="button" disabled={saving} onClick={saveLineup}>Salvar escalacao</button>
+            <button className="button secondary" type="button" disabled={saving} onClick={saveScore}>Atualizar resultado</button>
+          </div>
+        </div>
+      )}
+
+      {match.status === 'Encerrada' && (
+        <div className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div><span>Final</span><h3>Resumo da partida</h3></div>
+            <button className="action-link" type="button" onClick={() => setView('performance')}>Registrar desempenho</button>
+          </div>
+          <p className="settings-warning">{match.observations || 'Resultado final salvo. Use Meu Desempenho para registrar as estatisticas individuais.'}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AttendanceList({ title, items }) {
+  return (
+    <div>
+      <strong>{title}</strong>
+      {items.map((item) => <span key={item.id}>{item.player?.nickname || 'Jogador'}</span>)}
+      {items.length === 0 && <small>Ninguem ainda.</small>}
+    </div>
+  );
+}
+
+function LineupList({ title, players, captainId }) {
+  if (!players.length) return null;
+  return (
+    <div className="lineup-list">
+      <strong>{title}</strong>
+      {players.map((player) => (
+        <span key={player.id}>#{player.shirt} {player.nickname}{captainId === player.id ? ' | Capitao' : ''}</span>
+      ))}
+    </div>
   );
 }
 
@@ -4148,6 +4762,24 @@ function TopRanking({ players }) {
   );
 }
 
+function SkeletonGrid() {
+  return (
+    <div className="skeleton-grid" aria-busy="true">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div className="skeleton-card" key={index} />
+      ))}
+    </div>
+  );
+}
+
+function CelebrationBurst() {
+  return (
+    <div className="celebration-burst" aria-hidden="true">
+      {Array.from({ length: 10 }).map((_, index) => <i key={index} />)}
+    </div>
+  );
+}
+
 function Toast({ message }) {
   return (
     <div className="toast" role="status">
@@ -4176,13 +4808,48 @@ function EmptyState({ icon: Icon, title, description, action, onAction }) {
   );
 }
 
+function useAnimatedNumber(value) {
+  const numeric = typeof value === 'number' ? value : (/^\d+(\.\d+)?$/.test(String(value)) ? Number(value) : null);
+  const [display, setDisplay] = useState(numeric ?? value);
+
+  useEffect(() => {
+    if (numeric === null) {
+      setDisplay(value);
+      return undefined;
+    }
+
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      setDisplay(value);
+      return undefined;
+    }
+
+    let frame = 0;
+    const frames = 28;
+    const start = 0;
+    const timer = window.setInterval(() => {
+      frame += 1;
+      const progress = Math.min(frame / frames, 1);
+      const eased = 1 - (1 - progress) ** 3;
+      const next = start + (numeric - start) * eased;
+      setDisplay(Number.isInteger(numeric) ? Math.round(next) : next.toFixed(1));
+      if (progress === 1) window.clearInterval(timer);
+    }, 18);
+
+    return () => window.clearInterval(timer);
+  }, [numeric, value]);
+
+  return display;
+}
+
 function StatCard({ icon: Icon, value, label }) {
+  const displayValue = useAnimatedNumber(value);
   return (
     <article className="stat-card">
       <div className="icon-tile gold">
         <Icon size={16} />
       </div>
-      <strong>{value}</strong>
+      <strong>{displayValue}</strong>
       <span>{label}</span>
     </article>
   );
@@ -4372,9 +5039,11 @@ function pageTitle(view) {
     'player-detail': 'Perfil do Jogador',
     tryouts: 'Peneiras',
     matches: 'Partidas',
+    matchday: 'Matchday',
     calendar: 'Calendario',
     notifications: 'Notificacoes',
     ranking: 'Ranking',
+    compare: 'Comparar jogadores',
     team: 'Time',
     championships: 'Campeonatos',
     admin: 'Admin',

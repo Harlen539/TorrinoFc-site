@@ -6,6 +6,7 @@ import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeChampionship } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyChampionshipCreated } from '../services/notificationService.js';
+import { recordActivity } from '../services/activityService.js';
 
 export const championshipsRouter = Router();
 
@@ -65,6 +66,15 @@ championshipsRouter.post('/api/championships', requirePermission('manageChampion
     },
   });
   await notifyChampionshipCreated(championship);
+  await recordActivity({
+    type: 'championship_created',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Campeonato ${championship.name} criado.`,
+    relatedEntityType: 'championship',
+    relatedEntityId: championship.id,
+    actionUrl: '/championships',
+  });
   response.status(201).json({ championship: serializeChampionship(championship) });
 }));
 
