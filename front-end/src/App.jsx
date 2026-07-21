@@ -925,9 +925,43 @@ function App() {
     notify('Preferencias de notificacoes atualizadas.');
   };
 
-  const logout = () => {
+  const logout = async ({ allDevices = false } = {}) => {
+    if (allDevices && !window.confirm('Sair desta conta em todos os dispositivos?')) {
+      return;
+    }
+
+    try {
+      if (hasSupabaseConfig) {
+        await supabase.auth.signOut(allDevices ? { scope: 'global' } : undefined);
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('[logout]', error);
+      }
+    } finally {
+      localStorage.removeItem('torinnofc-session');
+      setNotificationsState({ loading: false, error: '', items: [], unreadCount: 0 });
+      setNotificationPreferences(null);
+      setSession(null);
+      setView('auth');
+      setAuthMode('login');
+      notify(allDevices ? 'Conta desconectada em todos os dispositivos.' : 'Voce saiu da conta.');
+    }
+  };
+
+  const logoutAllDevices = () => {
+    logout({ allDevices: true });
+  };
+
+  const logoutCurrentDevice = () => {
+    logout();
+  };
+
+  const openLoginWithAnotherAccount = async () => {
+    await logout();
+    setAuthMode('login');
     setSession(null);
-    setView('landing');
+    setView('auth');
   };
 
   if (!session) {
@@ -955,6 +989,7 @@ function App() {
       view={view}
       setView={setView}
       onLogout={logout}
+      onLogoutAllDevices={logoutAllDevices}
       notificationsState={notificationsState}
       markNotificationRead={markNotificationRead}
       markAllNotificationsRead={markAllNotificationsRead}
@@ -995,6 +1030,9 @@ function App() {
         selectedPlayerId={selectedPlayerId}
         setSelectedPlayerId={setSelectedPlayerId}
         notify={notify}
+        onLogout={logoutCurrentDevice}
+        onLogoutAllDevices={logoutAllDevices}
+        onSwitchAccount={openLoginWithAnotherAccount}
       />
       {celebrating && <CelebrationBurst />}
       {toast && <Toast message={toast} />}
@@ -1228,7 +1266,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
   );
 }
 
-function DashboardShell({ children, user, view, setView, onLogout, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
+function DashboardShell({ children, user, view, setView, onLogout, onLogoutAllDevices, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
   const [open, setOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const unreadCount = notificationsState?.unreadCount || 0;
@@ -1276,10 +1314,16 @@ function DashboardShell({ children, user, view, setView, onLogout, notifications
           })}
         </nav>
 
-        <button className="logout-button" type="button" onClick={onLogout}>
-          <LogOut size={18} />
-          Sair
-        </button>
+        <div className="sidebar-session-actions">
+          <button className="logout-button" type="button" onClick={() => onLogout()}>
+            <LogOut size={18} />
+            Sair
+          </button>
+          <button className="logout-button subtle" type="button" onClick={() => onLogoutAllDevices()}>
+            <ShieldCheck size={18} />
+            Sair de todos
+          </button>
+        </div>
       </aside>
 
       <section className="content-area">
@@ -1290,6 +1334,16 @@ function DashboardShell({ children, user, view, setView, onLogout, notifications
           <div>
             <span>TorinnoFC</span>
             <strong>{pageTitle(view)}</strong>
+          </div>
+          <div className="topbar-session-actions">
+            <button className="button minimal small" type="button" onClick={() => onLogout()}>
+              <LogOut size={15} />
+              Sair
+            </button>
+            <button className="button secondary small" type="button" onClick={() => onLogoutAllDevices()}>
+              <ShieldCheck size={15} />
+              Todos dispositivos
+            </button>
           </div>
           <div className="notification-wrap">
             <button className={`notification ${unreadCount > 0 ? 'has-unread' : ''}`} type="button" onClick={() => setNotificationsOpen(!notificationsOpen)} aria-label="Abrir notificacoes">
@@ -2042,7 +2096,7 @@ function ApexChart({ options, className = '' }) {
   );
 }
 
-function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify }) {
+function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify, onLogout, onSwitchAccount }) {
   const linkedPlayer = findPlayerForUser(user, players);
   const base = linkedPlayer || {
     id: null,
@@ -2123,6 +2177,14 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
         <button className="button secondary" type="button" onClick={() => setEditing(!editing)}>
           <Edit3 size={16} />
           Editar perfil
+        </button>
+        <button className="button minimal" type="button" onClick={() => onSwitchAccount()}>
+          <UserPlus size={16} />
+          Trocar conta
+        </button>
+        <button className="button minimal danger" type="button" onClick={() => onLogout()}>
+          <LogOut size={16} />
+          Sair
         </button>
       </div>
 
@@ -3938,7 +4000,7 @@ function readAppSettings() {
   }
 }
 
-function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences }) {
+function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences, onLogout, onLogoutAllDevices, onSwitchAccount }) {
   const [settings, setSettings] = useState(readAppSettings);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
@@ -4084,6 +4146,26 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
             <span>{user.email}</span>
           </div>
           <span className={`role-badge ${user.role === 'admin' ? 'admin' : 'player'}`}>{user.staffRole || roleLabel(user.role)}</span>
+        </div>
+        <div className="panel settings-session-card">
+          <div className="settings-account-copy">
+            <strong>Sessao da conta</strong>
+            <span>Saia para entrar novamente ou trocar de conta. A opcao global encerra a sessao em outros dispositivos conectados.</span>
+          </div>
+          <div className="settings-session-actions">
+            <button className="button secondary" type="button" onClick={() => onSwitchAccount()}>
+              <UserPlus size={16} />
+              Trocar conta
+            </button>
+            <button className="button minimal" type="button" onClick={() => onLogout()}>
+              <LogOut size={16} />
+              Sair
+            </button>
+            <button className="button minimal danger" type="button" onClick={() => onLogoutAllDevices()}>
+              <ShieldCheck size={16} />
+              Sair de todos os dispositivos
+            </button>
+          </div>
         </div>
         <PasswordChangeCard notify={notify} />
       </SettingsGroup>

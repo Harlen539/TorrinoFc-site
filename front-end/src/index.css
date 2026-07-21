@@ -824,6 +824,22 @@ form {
   margin-top: auto;
 }
 
+.sidebar-session-actions {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.sidebar-session-actions .logout-button {
+  margin-top: 0;
+}
+
+.logout-button.subtle {
+  color: #d6bf85;
+  border: 1px solid rgba(212, 162, 76, 0.16);
+  background: rgba(212, 162, 76, 0.06);
+}
+
 .content-area {
   min-width: 0;
   padding: 18px;
@@ -834,6 +850,8 @@ form {
   position: sticky;
   top: 0;
   z-index: 4;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   margin: -18px -18px 16px;
@@ -852,6 +870,14 @@ form {
 
 .topbar strong {
   font-size: 17px;
+}
+
+.topbar-session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .icon-button,
@@ -2368,6 +2394,10 @@ textarea {
 }
 
 @media (max-width: 720px) {
+  .topbar-session-actions {
+    display: none;
+  }
+
   .matchday-hero {
     grid-template-columns: 1fr;
   }
@@ -3600,6 +3630,20 @@ textarea {
 
 .settings-account-card {
   grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.settings-session-card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.settings-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .settings-account-copy,
