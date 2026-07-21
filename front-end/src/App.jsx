@@ -101,6 +101,18 @@ const localTryoutsKey = 'torinnofc-tryouts-cache';
 const localChampionshipsKey = 'torinnofc-championships-cache';
 const localMatchPerformancesKey = 'torinnofc-match-performance-cache';
 const localNotificationPreferencesKey = 'torinnofc-notification-preferences-cache';
+const captchaSiteKey = (
+  import.meta.env.VITE_RECAPTCHA_SITE_KEY
+  || import.meta.env.VITE_CAPTCHA_SITE_KEY
+  || import.meta.env.VITE_HCAPTCHA_SITE_KEY
+  || import.meta.env.VITE_TURNSTILE_SITE_KEY
+  || ''
+);
+const captchaProvider = String(
+  import.meta.env.VITE_RECAPTCHA_PROVIDER
+  || import.meta.env.VITE_CAPTCHA_PROVIDER
+  || (captchaSiteKey ? 'recaptcha' : '')
+).trim().toLowerCase();
 
 const defaultNotificationPreferences = {
   matchCreated: true,
@@ -513,7 +525,7 @@ function normalizeUser(user) {
     name: user.name || user.nickname || 'Jogador TorinnoFC',
     nickname: user.nickname || user.name || 'Jogador',
     email: user.email || '',
-    password: user.password || 'torinnofc123',
+    password: user.password || '',
     role: user.role === 'admin' ? 'admin' : 'player',
     staffRole: user.staffRole || (user.role === 'admin' ? 'Admin' : 'Jogador'),
     position: user.position || 'Meio-campo',
@@ -1144,10 +1156,18 @@ function App() {
         return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
       }
       if (hasSupabaseConfig) {
+        let captchaOptions = {};
+        try {
+          captchaOptions = await getCaptchaOption('signup');
+        } catch (captchaError) {
+          return { error: authErrorMessage(captchaError, 'Nao foi possivel confirmar a verificacao anti-bot.') };
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password: form.password,
           options: {
+            ...captchaOptions,
             emailRedirectTo: window.location.origin,
             data: {
               name: form.name.trim(),
@@ -1159,7 +1179,12 @@ function App() {
         });
 
         if (error) {
-          return { error: 'Nao foi possivel criar a conta. Verifique o e-mail e tente novamente.' };
+          if (import.meta.env.DEV) console.error('[auth/signup]', error);
+          return { error: authErrorMessage(error, 'Nao foi possivel criar a conta. Verifique o e-mail e tente novamente.') };
+        }
+
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
+          return { error: 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.' };
         }
 
         if (data.user) {
@@ -1247,16 +1272,35 @@ function App() {
       return { ok: true };
     }
 
-    if (!existing && hasSupabaseConfig) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password: form.password });
-      if (error || !data.user) {
-        return { error: 'E-mail ou senha incorretos.' };
+    if (hasSupabaseConfig) {
+      let captchaOptions = {};
+      try {
+        captchaOptions = await getCaptchaOption('signin');
+      } catch (captchaError) {
+        return { error: authErrorMessage(captchaError, 'Nao foi possivel confirmar a verificacao anti-bot.') };
       }
 
-      return completeSupabaseAuth(data.user);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: form.password,
+        ...(Object.keys(captchaOptions).length ? { options: captchaOptions } : {}),
+      });
+
+      if (!error && data.user) {
+        return completeSupabaseAuth(data.user);
+      }
+
+      if (import.meta.env.DEV && error) console.error('[auth/signin]', error);
+      if (existing?.localOnly && existing.password && existing.password === form.password) {
+        setSession(publicUser(existing));
+        setView('dashboard');
+        return { ok: true };
+      }
+
+      return { error: authErrorMessage(error, 'E-mail ou senha incorretos.') };
     }
 
-    if (!existing || existing.password !== form.password) {
+    if (!existing || !existing.password || existing.password !== form.password) {
       return { error: 'E-mail ou senha incorretos.' };
     }
 
@@ -1651,6 +1695,8 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
   });
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const isRegister = mode === 'register';
 
@@ -1673,23 +1719,31 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Preencha nome completo e apelido.');
       return;
     }
-    const result = await onAuth({ ...form, email }, isRegister);
-    if (result?.error) {
-      setError(result.error);
-      setInfo('');
-      return;
-    }
-    if (result?.info) {
-      setError('');
-      setInfo(result.info);
-      return;
-    }
 
-    setError('');
-    setInfo('');
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await onAuth({ ...form, email }, isRegister);
+      if (result?.error) {
+        setError(result.error);
+        setInfo('');
+        return;
+      }
+      if (result?.info) {
+        setError('');
+        setInfo(result.info);
+        return;
+      }
+
+      setError('');
+      setInfo('');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const sendPasswordReset = async () => {
+    if (resettingPassword) return;
     const email = normalizeEmail(form.email);
     if (!isValidEmail(email)) {
       setError('Digite um e-mail valido para recuperar a senha.');
@@ -1699,15 +1753,25 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Recuperacao de senha exige Supabase configurado.');
       return;
     }
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
-    if (resetError) {
-      setError('Nao foi possivel enviar o link de recuperacao.');
-      return;
+
+    setResettingPassword(true);
+    try {
+      const captchaOptions = await getCaptchaOption('password_reset');
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+        ...captchaOptions,
+      });
+      if (resetError) {
+        setError(authErrorMessage(resetError, 'Nao foi possivel enviar o link de recuperacao.'));
+        return;
+      }
+      setError('');
+      setInfo('Se o e-mail estiver cadastrado, enviaremos um link de recuperacao.');
+    } catch (resetError) {
+      setError(authErrorMessage(resetError, 'Nao foi possivel enviar o link de recuperacao.'));
+    } finally {
+      setResettingPassword(false);
     }
-    setError('');
-    setInfo('Se o e-mail estiver cadastrado, enviaremos um link de recuperacao.');
   };
 
   return (
@@ -1778,13 +1842,13 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
           )}
           {error && <p className="form-error">{error}</p>}
           {info && <p className="form-info">{info}</p>}
-          <button className="button primary full" type="submit">
-            {isRegister ? 'Criar conta' : 'Entrar'}
+          <button className="button primary full" type="submit" disabled={submitting}>
+            {submitting ? (isRegister ? 'Criando...' : 'Entrando...') : (isRegister ? 'Criar conta' : 'Entrar')}
             <ChevronRight size={18} />
           </button>
           <div className="auth-help-actions">
-            <button className="button minimal" type="button" onClick={sendPasswordReset}>
-              Recuperar senha
+            <button className="button minimal" type="button" disabled={resettingPassword} onClick={sendPasswordReset}>
+              {resettingPassword ? 'Enviando...' : 'Recuperar senha'}
             </button>
           </div>
         </form>
@@ -6061,6 +6125,180 @@ function isValidEmail(value) {
   if (local.startsWith('.') || local.endsWith('.')) return false;
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
+function loadScriptOnce(id, src) {
+  if (typeof window === 'undefined') return Promise.resolve();
+
+  const existing = document.getElementById(id);
+  if (existing?.dataset.loaded === 'true') return Promise.resolve();
+  if (existing?.dataset.loading === 'true') {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.async = true;
+    script.defer = true;
+    script.dataset.loading = 'true';
+    script.onload = () => {
+      script.dataset.loaded = 'true';
+      script.dataset.loading = 'false';
+      resolve();
+    };
+    script.onerror = () => reject(new Error('Nao foi possivel carregar a verificacao anti-bot.'));
+    document.head.appendChild(script);
+  });
+}
+
+function captchaActionName(action) {
+  return String(action || 'auth').replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 32) || 'auth';
+}
+
+function getCaptchaProvider() {
+  if (!captchaSiteKey) return '';
+  if (captchaProvider.includes('turnstile')) return 'turnstile';
+  if (captchaProvider.includes('hcaptcha')) return 'hcaptcha';
+  return 'recaptcha';
+}
+
+function getHiddenCaptchaContainer(id) {
+  let container = document.getElementById(id);
+  if (container) return container;
+
+  container = document.createElement('div');
+  container.id = id;
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.bottom = '0';
+  container.style.width = '1px';
+  container.style.height = '1px';
+  document.body.appendChild(container);
+  return container;
+}
+
+function withCaptchaTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error('A verificacao anti-bot demorou para responder.')), 12000);
+    }),
+  ]);
+}
+
+async function getRecaptchaToken(action) {
+  await loadScriptOnce('torinnofc-recaptcha', `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(captchaSiteKey)}`);
+  const grecaptcha = window.grecaptcha;
+  if (!grecaptcha?.execute) {
+    throw new Error('A verificacao anti-bot nao carregou.');
+  }
+
+  await new Promise((resolve) => grecaptcha.ready(resolve));
+  return grecaptcha.execute(captchaSiteKey, { action: captchaActionName(action) });
+}
+
+async function getHCaptchaToken() {
+  await loadScriptOnce('torinnofc-hcaptcha', 'https://js.hcaptcha.com/1/api.js?render=explicit');
+  const hcaptcha = window.hcaptcha;
+  if (!hcaptcha?.render || !hcaptcha?.execute) {
+    throw new Error('A verificacao anti-bot nao carregou.');
+  }
+
+  const container = getHiddenCaptchaContainer('torinnofc-hcaptcha-container');
+  container.innerHTML = '';
+  const widgetId = hcaptcha.render(container, {
+    sitekey: captchaSiteKey,
+    size: 'invisible',
+  });
+  const response = await hcaptcha.execute(widgetId, { async: true });
+  hcaptcha.reset(widgetId);
+  return typeof response === 'string' ? response : response?.response || response?.token || '';
+}
+
+async function getTurnstileToken(action) {
+  await loadScriptOnce('torinnofc-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit');
+  const turnstile = window.turnstile;
+  if (!turnstile?.render || !turnstile?.execute) {
+    throw new Error('A verificacao anti-bot nao carregou.');
+  }
+
+  const container = getHiddenCaptchaContainer('torinnofc-turnstile-container');
+  container.innerHTML = '';
+  return new Promise((resolve, reject) => {
+    const widgetId = turnstile.render(container, {
+      sitekey: captchaSiteKey,
+      size: 'invisible',
+      action: captchaActionName(action),
+      callback: (token) => {
+        turnstile.remove(widgetId);
+        resolve(token);
+      },
+      'error-callback': () => {
+        turnstile.remove(widgetId);
+        reject(new Error('A verificacao anti-bot falhou.'));
+      },
+      'expired-callback': () => {
+        turnstile.remove(widgetId);
+        reject(new Error('A verificacao anti-bot expirou.'));
+      },
+    });
+    turnstile.execute(widgetId);
+  });
+}
+
+async function getCaptchaToken(action) {
+  if (!captchaSiteKey || typeof window === 'undefined') return '';
+
+  const provider = getCaptchaProvider();
+  const token = await withCaptchaTimeout(
+    provider === 'turnstile'
+      ? getTurnstileToken(action)
+      : provider === 'hcaptcha'
+        ? getHCaptchaToken()
+        : getRecaptchaToken(action),
+  );
+
+  if (!token) {
+    throw new Error('Nao foi possivel confirmar a verificacao anti-bot.');
+  }
+  return token;
+}
+
+async function getCaptchaOption(action) {
+  const captchaToken = await getCaptchaToken(action);
+  return captchaToken ? { captchaToken } : {};
+}
+
+function authErrorMessage(error, fallback) {
+  const message = String(error?.message || '');
+  const code = String(error?.code || error?.name || '');
+  const raw = `${code} ${message}`.toLowerCase();
+
+  if (raw.includes('captcha')) {
+    return 'A verificacao anti-bot falhou. Atualize a pagina e tente novamente.';
+  }
+  if (raw.includes('already') || raw.includes('exists') || raw.includes('registered')) {
+    return 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.';
+  }
+  if (raw.includes('weak') || raw.includes('password')) {
+    return message || 'A senha nao atende as regras de seguranca.';
+  }
+  if (raw.includes('rate') || raw.includes('too many')) {
+    return 'Muitas tentativas seguidas. Aguarde um pouco e tente novamente.';
+  }
+  if (raw.includes('signup') && (raw.includes('disabled') || raw.includes('not allowed'))) {
+    return 'O cadastro esta desativado no provedor de login.';
+  }
+  if (raw.includes('email')) {
+    return 'Verifique o e-mail informado e tente novamente.';
+  }
+
+  return fallback;
 }
 
 function toMatchPayload(match) {
