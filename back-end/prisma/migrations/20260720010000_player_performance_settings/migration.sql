@@ -22,16 +22,34 @@ WHERE pp."user_id" IS NOT NULL
     SELECT 1 FROM "profiles" p WHERE p."id" = pp."user_id"
   );
 
-ALTER TABLE "player_profiles"
-  ADD CONSTRAINT "player_profiles_user_id_key" UNIQUE ("user_id");
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'player_profiles_user_id_key'
+      AND conrelid = 'player_profiles'::regclass
+  ) THEN
+    ALTER TABLE "player_profiles"
+      ADD CONSTRAINT "player_profiles_user_id_key" UNIQUE ("user_id");
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "player_profiles_user_id_idx"
   ON "player_profiles"("user_id");
 
-ALTER TABLE "player_profiles"
-  ADD CONSTRAINT "player_profiles_user_id_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "profiles"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'player_profiles_user_id_fkey'
+      AND conrelid = 'player_profiles'::regclass
+  ) THEN
+    ALTER TABLE "player_profiles"
+      ADD CONSTRAINT "player_profiles_user_id_fkey"
+      FOREIGN KEY ("user_id") REFERENCES "profiles"("id")
+      ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 ALTER TABLE "player_stats"
   ADD COLUMN IF NOT EXISTS "tackles" integer NOT NULL DEFAULT 0,

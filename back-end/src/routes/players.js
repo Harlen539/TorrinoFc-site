@@ -6,7 +6,7 @@ import { serializePlayer } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
-import { ensurePlayersForExistingUsers, ensureStatsForExistingPlayers } from '../services/playerSyncService.js';
+import { ensurePlayerForUser, ensurePlayersForExistingUsers, ensureStatsForExistingPlayers } from '../services/playerSyncService.js';
 
 export const playersRouter = Router();
 
@@ -17,6 +17,10 @@ const asyncRoute = (handler) => (request, response, next) => {
 function numberOrZero(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 }
 
 function makePlayerData(body) {
@@ -92,6 +96,7 @@ function authUserToPlayer(user) {
   return {
     id: `auth-player-${user.id}`,
     userId: user.id,
+    email: String(user.email || '').trim().toLowerCase(),
     fullName,
     nickname,
     position: sanitizeText(metadata.position, { maxLength: 60, fallback: 'Meio-campo' }),
@@ -144,8 +149,74 @@ export async function fetchSupabaseAuthPlayers() {
     .map(authUserToPlayer);
 }
 
+export async function syncSupabaseAuthUsersToDatabase(client = prisma) {
+  const authPlayers = await fetchSupabaseAuthPlayers();
+  if (!authPlayers.length) return 0;
+
+  let synced = 0;
+  let hasAdmin = await client.userProfile.count({ where: { role: 'admin', accountStatus: 'active' } }) > 0;
+
+  for (const authPlayer of authPlayers) {
+    const email = String(authPlayer.email || '').trim().toLowerCase();
+    const filters = [
+      ...(isUuid(authPlayer.userId) ? [{ id: authPlayer.userId }] : []),
+      ...(email ? [{ email }] : []),
+    ];
+
+    if (!filters.length) continue;
+
+    await client.$transaction(async (tx) => {
+      const existing = await tx.userProfile.findFirst({
+        where: { OR: filters },
+        include: { playerProfile: true },
+      });
+      const makeFounder = !hasAdmin;
+      const data = {
+        name: authPlayer.fullName,
+        nickname: authPlayer.nickname,
+        email,
+        accountStatus: 'active',
+        avatarUrl: authPlayer.photo || authPlayer.avatar || null,
+        updatedAt: new Date(),
+        ...(makeFounder ? { role: 'admin', staffRole: 'Fundador' } : {}),
+      };
+      const profile = existing
+        ? await tx.userProfile.update({
+          where: { id: existing.id },
+          data,
+          include: { playerProfile: true },
+        })
+        : await tx.userProfile.create({
+          data: {
+            ...(isUuid(authPlayer.userId) ? { id: authPlayer.userId } : {}),
+            ...data,
+            role: makeFounder ? 'admin' : 'player',
+            staffRole: makeFounder ? 'Fundador' : 'Jogador',
+          },
+          include: { playerProfile: true },
+        });
+
+      await ensurePlayerForUser(tx, profile, {
+        name: authPlayer.fullName,
+        nickname: authPlayer.nickname,
+        position: authPlayer.position,
+        shirt: authPlayer.shirt,
+        avatarUrl: authPlayer.avatar,
+        photo: authPlayer.photo,
+        bio: authPlayer.bio,
+      });
+
+      if (makeFounder) hasAdmin = true;
+      synced += 1;
+    });
+  }
+
+  return synced;
+}
+
 playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
   try {
+    await syncSupabaseAuthUsersToDatabase(prisma);
     await ensurePlayersForExistingUsers(prisma);
     await ensureStatsForExistingPlayers(prisma);
 
