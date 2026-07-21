@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import { createPublicKey, createVerify } from 'node:crypto';
+import { hasPermission } from '../services/settingsService.js';
 
 const jwksCache = {
   keys: null,
@@ -184,4 +185,42 @@ export function requireAdminUser(request, response, next) {
     .catch((error) => {
       response.status(error.statusCode || 401).json({ error: error.message || 'Usuario autenticado obrigatorio.' });
     });
+}
+
+export function requireAuthenticatedUser(request, response, next) {
+  resolveAuthenticatedProfile(request)
+    .then((profile) => {
+      if (profile.accountStatus !== 'active') {
+        response.status(403).json({ error: 'Usuario inativo.' });
+        return;
+      }
+
+      next();
+    })
+    .catch((error) => {
+      response.status(error.statusCode || 401).json({ error: error.message || 'Usuario autenticado obrigatorio.' });
+    });
+}
+
+export function requirePermission(permissionKey) {
+  return (request, response, next) => {
+    resolveAuthenticatedProfile(request)
+      .then(async (profile) => {
+        if (profile.accountStatus !== 'active') {
+          response.status(403).json({ error: 'Usuario inativo.' });
+          return;
+        }
+
+        const allowed = await hasPermission(prisma, profile.role, permissionKey);
+        if (!allowed) {
+          response.status(403).json({ error: 'Permissao insuficiente para realizar esta acao.' });
+          return;
+        }
+
+        next();
+      })
+      .catch((error) => {
+        response.status(error.statusCode || 401).json({ error: error.message || 'Usuario autenticado obrigatorio.' });
+      });
+  };
 }

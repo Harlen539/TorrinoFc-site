@@ -40,7 +40,7 @@ Nesse modo, a mensagem e enviada para numeros privados autorizados em vez de gru
 
 ## Endpoints Internos
 
-Todos os endpoints exigem o header `x-admin-api-key` com o valor de `ADMIN_API_KEY`.
+As rotas administrativas atuais usam `Authorization: Bearer <access_token>` do Supabase e validam o papel `admin` em `profiles.role`. A chave `ADMIN_API_KEY` ficou apenas como compatibilidade legada interna e nao deve ser enviada pelo frontend.
 
 ### Criar Partida
 

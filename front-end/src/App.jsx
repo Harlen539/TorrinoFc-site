@@ -42,19 +42,30 @@ import {
   deleteNotification as apiDeleteNotification,
   deletePlayer as apiDeletePlayer,
   deleteTryout as apiDeleteTryout,
+  deleteMyPerformance as apiDeleteMyPerformance,
+  downloadPerformanceReport,
   fetchChampionships,
+  fetchClubSettings,
   fetchMatches,
+  fetchMyPerformance,
+  fetchMySettings,
   fetchNotificationPreferences,
   fetchNotifications,
   markAllNotificationsRead as apiMarkAllNotificationsRead,
   markNotificationRead as apiMarkNotificationRead,
   fetchPlayers,
+  fetchRolePermissions,
   fetchTryouts,
   fetchUsers,
+  createMyPerformance as apiCreateMyPerformance,
   syncUser as apiSyncUser,
   updateChampionship as apiUpdateChampionship,
+  updateClubSettings,
   updateMatch as apiUpdateMatch,
+  updateMyPerformance as apiUpdateMyPerformance,
+  updateMySettings,
   updateNotificationPreferences,
+  updateRolePermission,
   updatePlayerStats as apiUpdatePlayerStats,
   createTryout as apiCreateTryout,
   updateTryoutStatus as apiUpdateTryoutStatus,
@@ -114,11 +125,6 @@ const gamePositions = [
 ];
 
 const statusFlow = ['Agendada', 'Em andamento', 'Encerrada'];
-const accountRoles = [
-  { value: 'player', label: 'Jogador' },
-  { value: 'admin', label: 'Admin' },
-];
-
 function toDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -371,7 +377,8 @@ function normalizeUser(user) {
     staffRole: user.staffRole || (user.role === 'admin' ? 'Admin' : 'Jogador'),
     position: user.position || 'Meio-campo',
     shirt: String(user.shirt || '10'),
-    playerId: user.playerId,
+    playerId: user.playerId || user.player?.id || '',
+    hasPlayerProfile: user.hasPlayerProfile || Boolean(user.playerId || user.player?.id),
     photo: user.photo || '',
   };
 }
@@ -393,10 +400,13 @@ function normalizePlayer(player) {
       recoveries: Number(player.stats?.recoveries) || 0,
       matches: Number(player.stats?.matches) || 0,
       wins: Number(player.stats?.wins) || 0,
+      draws: Number(player.stats?.draws) || 0,
       losses: Number(player.stats?.losses) || 0,
       rating: Number(player.stats?.rating) || 0,
       shots: Number(player.stats?.shots) || 0,
       passes: Number(player.stats?.passes) || 0,
+      tackles: Number(player.stats?.tackles) || 0,
+      interceptions: Number(player.stats?.interceptions) || 0,
       yellow: Number(player.stats?.yellow) || 0,
       red: Number(player.stats?.red) || 0,
       notes: player.stats?.notes || '',
@@ -582,8 +592,8 @@ function App() {
       nickname: metadata.nickname || existing?.nickname || metadata.name || email.split('@')[0],
       email,
       password: existing?.password || '',
-      role: existing?.role || metadata.role || 'player',
-      staffRole: existing?.staffRole || metadata.staffRole || (metadata.role === 'admin' ? 'Admin' : 'Jogador'),
+      role: existing?.role || 'player',
+      staffRole: existing?.staffRole || 'Jogador',
       position: metadata.position || existing?.position || 'Meio-campo',
       shirt: metadata.shirt || existing?.shirt || '10',
     });
@@ -596,7 +606,17 @@ function App() {
         backendId: synced.id,
         role: synced.role,
         staffRole: synced.staffRole,
+        playerId: synced.playerId,
+        hasPlayerProfile: Boolean(synced.playerId),
       });
+      if (synced.player) {
+        setPlayers((items) => {
+          const normalized = normalizePlayer(synced.player);
+          return items.some((item) => item.id === normalized.id)
+            ? items.map((item) => (item.id === normalized.id ? normalized : item))
+            : [normalized, ...items];
+        });
+      }
     } catch {
       // Mantem a sessao do Supabase ativa mesmo se o perfil local ainda nao sincronizar.
     }
@@ -623,10 +643,6 @@ function App() {
       if (existing) {
         return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
       }
-      if (!accountRoles.some((role) => role.value === form.role)) {
-        return { error: 'Selecione o cargo da conta.' };
-      }
-
       if (hasSupabaseConfig) {
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -638,8 +654,6 @@ function App() {
               nickname: form.nickname.trim(),
               position: form.position,
               shirt: form.shirt,
-              role: form.role,
-              staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
             },
           },
         });
@@ -656,8 +670,8 @@ function App() {
             nickname: metadata.nickname || form.nickname.trim(),
             email,
             password: form.password,
-            role: form.role,
-            staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
+            role: 'player',
+            staffRole: 'Jogador',
             position: metadata.position || form.position,
             shirt: metadata.shirt || form.shirt,
           });
@@ -668,6 +682,11 @@ function App() {
             user.backendId = synced.id;
             user.role = synced.role;
             user.staffRole = synced.staffRole;
+            user.playerId = synced.playerId;
+            user.hasPlayerProfile = Boolean(synced.playerId);
+            if (synced.player) {
+              setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
+            }
           } catch {
             return { error: 'Conta criada, mas nao foi possivel salvar o perfil no banco. Tente entrar novamente em alguns segundos.' };
           }
@@ -685,8 +704,8 @@ function App() {
         nickname: form.nickname.trim(),
         email,
         password: form.password,
-        role: form.role,
-        staffRole: form.role === 'admin' ? 'Admin' : 'Jogador',
+        role: 'player',
+        staffRole: 'Jogador',
         position: form.position,
         shirt: form.shirt,
       });
@@ -700,7 +719,12 @@ function App() {
           backendId: synced.id,
           role: synced.role,
           staffRole: synced.staffRole,
+          playerId: synced.playerId,
+          hasPlayerProfile: Boolean(synced.playerId),
         });
+        if (synced.player) {
+          setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
+        }
       } catch {
         return { error: 'Nao foi possivel salvar o usuario no banco. Verifique o backend e tente novamente.' };
       }
@@ -793,13 +817,28 @@ function App() {
       account.backendId = synced.id;
     }
     const updated = await apiUpdateUserRole(account.backendId, nextRole);
+    const normalizedUpdated = normalizeUser({
+      ...account,
+      id: updated.id,
+      backendId: updated.id,
+      role: updated.role,
+      staffRole: updated.staffRole,
+      playerId: updated.playerId || account.playerId,
+      hasPlayerProfile: updated.hasPlayerProfile ?? account.hasPlayerProfile,
+    });
     setUsers((items) =>
       items.map((item) =>
         item.id === account.id
-          ? { ...item, backendId: updated.id, role: updated.role, staffRole: updated.staffRole }
+          ? normalizedUpdated
           : item,
       ),
     );
+    if (session?.id === account.id || session?.email?.toLowerCase() === account.email?.toLowerCase()) {
+      setSession(publicUser(normalizedUpdated));
+      if (updated.role !== 'admin' && view === 'admin') {
+        setView('dashboard');
+      }
+    }
     return updated;
   };
 
@@ -991,7 +1030,6 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
     nickname: '',
     email: '',
     password: '',
-    role: 'player',
     position: 'Meio-campo',
     shirt: '10',
     website: '',
@@ -1020,11 +1058,6 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError('Preencha nome completo e apelido.');
       return;
     }
-    if (isRegister && !accountRoles.some((role) => role.value === form.role)) {
-      setError('Selecione o cargo da conta.');
-      return;
-    }
-
     const result = await onAuth({ ...form, email }, isRegister);
     if (result?.error) {
       setError(result.error);
@@ -1117,14 +1150,6 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
           </label>
           {isRegister && (
             <div className="form-grid">
-              <label className="field">
-                <span>Cargo</span>
-                <select value={form.role} required onChange={(event) => setForm({ ...form, role: event.target.value })}>
-                  {accountRoles.map((role) => (
-                    <option value={role.value} key={role.value}>{role.label}</option>
-                  ))}
-                </select>
-              </label>
               <label className="field">
                 <span>Posicao</span>
                 <select value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })}>
@@ -1451,9 +1476,11 @@ function PageRouter(props) {
   return pages[view] || <Dashboard {...props} />;
 }
 
-function Dashboard({ user, players, matches, championships = [], setView }) {
+function Dashboard({ user, players, matches, championships = [], setView, notify }) {
   const endedMatches = matches.filter((match) => match.status === 'Encerrada');
   const teamStats = getTeamStats(players, matches);
+  const myPlayer = findPlayerForUser(user, players);
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="page-grid">
@@ -1480,6 +1507,44 @@ function Dashboard({ user, players, matches, championships = [], setView }) {
         </div>
 
         <TeamInsights stats={teamStats} players={players} setView={setView} />
+
+        <article className="panel dashboard-panel">
+          <div className="dashboard-panel-head">
+            <div>
+              <span>Desempenho</span>
+              <h3>{isAdmin ? 'Resumo do elenco' : 'Resumo pessoal'}</h3>
+            </div>
+            <button className="action-link" type="button" onClick={() => setView(isAdmin ? 'ranking' : 'performance')}>
+              {isAdmin ? 'Ranking' : 'Meu Desempenho'}
+            </button>
+          </div>
+          {isAdmin ? (
+            <div className="dashboard-list">
+              <div className="dashboard-list-row"><strong>Total de jogadores</strong><small>{players.length}</small></div>
+              <div className="dashboard-list-row"><strong>Com desempenho</strong><small>{players.filter((player) => player.stats.matches > 0).length}</small></div>
+              <div className="dashboard-list-row"><strong>Gols e assistencias</strong><small>{teamStats.totalGoals} / {players.reduce((sum, player) => sum + player.stats.assists, 0)}</small></div>
+              {players.filter((player) => player.stats.matches > 0).slice(0, 3).map((player) => (
+                <div className="dashboard-list-row" key={player.id}>
+                  <strong>{player.nickname}</strong>
+                  <small>Nota {player.stats.rating || 0}</small>
+                </div>
+              ))}
+              {players.every((player) => player.stats.matches === 0) && <EmptyState icon={Activity} title="Nenhum jogador possui estatisticas atualizadas." description="Cadastre desempenhos para visualizar o resumo do elenco." />}
+            </div>
+          ) : myPlayer ? (
+            <div className="dashboard-list">
+              <div className="dashboard-list-row"><strong>Partidas</strong><small>{myPlayer.stats.matches}</small></div>
+              <div className="dashboard-list-row"><strong>Gols / Assistencias</strong><small>{myPlayer.stats.goals} / {myPlayer.stats.assists}</small></div>
+              <div className="dashboard-list-row"><strong>Roubadas / Nota media</strong><small>{myPlayer.stats.recoveries} / {myPlayer.stats.rating || 0}</small></div>
+              <div className="modal-actions">
+                <button className="button secondary" type="button" onClick={() => setView('performance')}>Abrir Meu Desempenho</button>
+                <button className="button secondary" type="button" onClick={() => downloadPerformanceReport({ format: 'pdf' }).catch((error) => notify?.(error.message))}>Baixar relatorio</button>
+              </div>
+            </div>
+          ) : (
+            <EmptyState icon={Activity} title="Nenhum desempenho registrado." description="Entre novamente para sincronizar seu jogador e registrar uma partida." />
+          )}
+        </article>
 
         <div className="dashboard-panels">
           <article className="panel dashboard-panel">
@@ -2152,86 +2217,295 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
   );
 }
 
-function Performance({ user, players, setPlayers, updatePlayerStats, notify }) {
-  const me = findPlayerForUser(user, players);
-  const [stats, setStats] = useState({
-    ...me?.stats,
-    shots: me?.stats?.shots || 0,
-    passes: me?.stats?.passes || 0,
-    yellow: me?.stats?.yellow || 0,
-    red: me?.stats?.red || 0,
-    notes: me?.stats?.notes || '',
-  });
+function emptyPerformanceForm(matchId = '') {
+  return {
+    matchId,
+    goals: 0,
+    assists: 0,
+    recoveries: 0,
+    shots: 0,
+    passes: 0,
+    tackles: 0,
+    interceptions: 0,
+    minutes: 90,
+    yellow: 0,
+    red: 0,
+    rating: 0,
+    notes: '',
+  };
+}
+
+function Performance({ user, players, setPlayers, matches, notify }) {
+  const linkedPlayer = findPlayerForUser(user, players);
+  const [player, setPlayer] = useState(linkedPlayer);
+  const [performances, setPerformances] = useState([]);
+  const [form, setForm] = useState(() => emptyPerformanceForm(matches[0]?.id || ''));
+  const [editingId, setEditingId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchMyPerformance()
+      .then((payload) => {
+        if (!active) return;
+        const normalizedPlayer = payload.player ? normalizePlayer(payload.player) : linkedPlayer;
+        setPlayer(normalizedPlayer || null);
+        setPerformances(payload.performances || []);
+        if (normalizedPlayer) {
+          setPlayers((items) => {
+            const exists = items.some((item) => item.id === normalizedPlayer.id);
+            return exists
+              ? items.map((item) => (item.id === normalizedPlayer.id ? normalizedPlayer : item))
+              : [normalizedPlayer, ...items];
+          });
+        }
+        setError('');
+      })
+      .catch((apiError) => setError(apiError.message || 'Nao foi possivel carregar seu desempenho.'))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user.id]);
+
+  const availableMatches = matches.filter((match) => match.status !== 'Cancelada');
+  const selectedMatch = availableMatches.find((match) => match.id === form.matchId);
+  const stats = player?.stats || {};
 
   const updateNumber = (key, value) => {
-    setStats({ ...stats, [key]: value === '' ? 0 : Number(value) });
+    setForm((current) => ({ ...current, [key]: value === '' ? '' : Number(value) }));
   };
 
-  if (!me) {
+  const validateForm = () => {
+    if (!form.matchId && !editingId) return 'Selecione uma partida cadastrada.';
+    const numericKeys = ['goals', 'assists', 'recoveries', 'shots', 'passes', 'tackles', 'interceptions', 'minutes', 'yellow', 'red'];
+    if (numericKeys.some((key) => !Number.isInteger(Number(form[key])) || Number(form[key]) < 0)) {
+      return 'Use apenas numeros inteiros nao negativos.';
+    }
+    if (!Number.isFinite(Number(form.rating)) || Number(form.rating) < 0 || Number(form.rating) > 10) {
+      return 'A nota deve ficar entre 0 e 10.';
+    }
+    return '';
+  };
+
+  const reloadPerformance = async () => {
+    const payload = await fetchMyPerformance();
+    const normalizedPlayer = payload.player ? normalizePlayer(payload.player) : null;
+    setPlayer(normalizedPlayer);
+    setPerformances(payload.performances || []);
+    if (normalizedPlayer) {
+      setPlayers((items) => items.map((item) => (item.id === normalizedPlayer.id ? normalizedPlayer : item)));
+    }
+  };
+
+  const submit = async () => {
+    const validation = validateForm();
+    if (validation) {
+      notify(validation);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = editingId
+        ? await apiUpdateMyPerformance(editingId, form)
+        : await apiCreateMyPerformance(form);
+      const normalizedPlayer = normalizePlayer(payload.player);
+      setPlayer(normalizedPlayer);
+      setPlayers((items) => items.map((item) => (item.id === normalizedPlayer.id ? normalizedPlayer : item)));
+      await reloadPerformance();
+      setForm(emptyPerformanceForm(availableMatches[0]?.id || ''));
+      setEditingId('');
+      notify('Desempenho salvo no banco.');
+    } catch (apiError) {
+      notify(apiError.message || 'Nao foi possivel salvar o desempenho.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editPerformance = (item) => {
+    setEditingId(item.id);
+    setForm({
+      matchId: item.matchId,
+      goals: item.goals,
+      assists: item.assists,
+      recoveries: item.recoveries,
+      shots: item.shots,
+      passes: item.passes,
+      tackles: item.tackles,
+      interceptions: item.interceptions,
+      minutes: item.minutes,
+      yellow: item.yellow,
+      red: item.red,
+      rating: item.rating,
+      notes: item.notes,
+    });
+  };
+
+  const removePerformance = async (item) => {
+    if (!window.confirm('Excluir este desempenho?')) return;
+    setSaving(true);
+    try {
+      await apiDeleteMyPerformance(item.id);
+      await reloadPerformance();
+      notify('Desempenho excluido.');
+    } catch (apiError) {
+      notify(apiError.message || 'Nao foi possivel excluir o desempenho.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
     return (
       <section>
-        <SectionHeader eyebrow="Controle pessoal" title="Meu desempenho" />
-        <EmptyState icon={Activity} title="Nenhum jogador vinculado ao seu perfil." description="Quando seu perfil de jogador for cadastrado no elenco, suas estatisticas aparecem aqui." />
+        <SectionHeader eyebrow="Controle pessoal" title="Meu Desempenho" />
+        <div className="panel performance-panel">Carregando desempenho...</div>
+      </section>
+    );
+  }
+
+  if (!player) {
+    return (
+      <section>
+        <SectionHeader eyebrow="Controle pessoal" title="Meu Desempenho" />
+        <EmptyState icon={Activity} title="Nenhum jogador vinculado ao seu perfil." description={error || 'Entre novamente para sincronizar seu cadastro de jogador com o elenco.'} />
       </section>
     );
   }
 
   return (
     <section>
-      <SectionHeader eyebrow="Controle pessoal" title="Meu desempenho" />
+      <SectionHeader eyebrow="Controle pessoal" title="Meu Desempenho" />
       <div className="panel performance-player-card">
+        <div className="avatar">{player.avatar}</div>
         <div className="performance-player-copy">
-          <strong>{me.nickname}</strong>
-          <span>{me.position} | Camisa {me.shirt} | {user.staffRole || roleLabel(user.role)}</span>
+          <strong>{player.nickname}</strong>
+          <span>{player.position} | Camisa {player.shirt} | {user.staffRole || roleLabel(user.role)}</span>
+          <small>{stats.matches || 0} partidas registradas</small>
         </div>
-        <div className="avatar">{me.avatar}</div>
+        <div className="performance-actions">
+          <button className="button secondary" type="button" onClick={() => downloadPerformanceReport({ format: 'pdf' }).catch((apiError) => notify(apiError.message))}>
+            <BarChart3 size={16} />
+            PDF
+          </button>
+          <button className="button secondary" type="button" onClick={() => downloadPerformanceReport({ format: 'csv' }).catch((apiError) => notify(apiError.message))}>
+            <BarChart3 size={16} />
+            CSV
+          </button>
+        </div>
       </div>
+
+      <div className="dashboard-metrics">
+        <StatCard icon={Flag} value={stats.matches || 0} label="Partidas" />
+        <StatCard icon={Trophy} value={stats.goals || 0} label="Gols" />
+        <StatCard icon={Users} value={stats.assists || 0} label="Assistencias" />
+        <StatCard icon={Activity} value={stats.recoveries || 0} label="Roubadas" />
+        <StatCard icon={BarChart3} value={stats.shots || 0} label="Finalizacoes" />
+        <StatCard icon={CheckCircle2} value={stats.passes || 0} label="Passes certos" />
+        <StatCard icon={Shield} value={stats.tackles || 0} label="Desarmes" />
+        <StatCard icon={Eye} value={stats.interceptions || 0} label="Interceptacoes" />
+        <StatCard icon={Star} value={stats.rating || 0} label="Nota media" />
+        <StatCard icon={Sparkles} value={(stats.goals || 0) + (stats.assists || 0)} label="Participacoes" />
+      </div>
+
       <div className="panel performance-panel">
+        <h3>{editingId ? 'Editar desempenho da partida' : 'Registrar desempenho da partida'}</h3>
+        {availableMatches.length === 0 && (
+          <div className="settings-warning">Nenhuma partida cadastrada. Cadastre uma partida para registrar desempenho.</div>
+        )}
+        <label className="field">
+          <span>Partida</span>
+          <select value={form.matchId} disabled={Boolean(editingId) || saving} onChange={(event) => setForm({ ...form, matchId: event.target.value })}>
+            <option value="">Selecione</option>
+            {availableMatches.map((match) => (
+              <option value={match.id} key={match.id}>{match.dateKey} | {match.away} | {match.score}</option>
+            ))}
+          </select>
+        </label>
+        {selectedMatch && <div className="settings-warning">Adversario: {selectedMatch.away} | Data: {selectedMatch.dateKey} | Resultado: {selectedMatch.score}</div>}
         <div className="form-grid three performance-grid">
           {[
             ['goals', 'Gols'],
             ['assists', 'Assistencias'],
-            ['recoveries', 'Roubadas de bola'],
+            ['recoveries', 'Roubadas'],
             ['shots', 'Finalizacoes'],
             ['passes', 'Passes certos'],
-            ['matches', 'Partidas'],
-            ['wins', 'Vitorias'],
-            ['losses', 'Derrotas'],
-            ['rating', 'Nota da partida'],
+            ['tackles', 'Desarmes'],
+            ['interceptions', 'Interceptacoes'],
+            ['minutes', 'Minutos'],
+            ['yellow', 'Cartao amarelo'],
+            ['red', 'Cartao vermelho'],
+            ['rating', 'Nota'],
           ].map(([key, label]) => (
-            <Field key={key} label={label} type="number" value={stats[key]} onChange={(value) => updateNumber(key, value)} />
+            <Field key={key} label={label} type="number" value={form[key]} onChange={(value) => updateNumber(key, value)} />
           ))}
         </div>
         <label className="field performance-notes">
-          <span>Observacoes da partida</span>
-          <textarea value={stats.notes} onChange={(event) => setStats({ ...stats, notes: event.target.value })} />
+          <span>Observacoes</span>
+          <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
         </label>
         <div className="performance-actions">
-          <button
-            className="button primary"
-            type="button"
-            onClick={() => {
-              const numericKeys = ['goals', 'assists', 'recoveries', 'shots', 'passes', 'matches', 'wins', 'losses', 'rating'];
-              if (numericKeys.some((key) => Number.isNaN(Number(stats[key])) || Number(stats[key]) < 0)) {
-                notify('Use apenas numeros validos no desempenho.');
-                return;
-              }
-              if (Number(stats.rating) > 10) {
-                notify('A nota da partida deve ser entre 0 e 10.');
-                return;
-              }
-              updatePlayerStats(me.id, stats)
-                .then((updatedPlayer) => {
-                  setPlayers(players.map((player) => (player.id === me.id ? normalizePlayer(updatedPlayer) : player)));
-                  notify('Desempenho salvo.');
-                })
-                .catch((error) => notify(error.message || 'Nao foi possivel salvar o desempenho.'));
-            }}
-          >
+          <button className="button primary" type="button" disabled={saving || availableMatches.length === 0} onClick={submit}>
             <Save size={16} />
-            Salvar desempenho
+            {saving ? 'Salvando...' : 'Salvar desempenho'}
           </button>
+          {editingId && (
+            <button className="button secondary" type="button" disabled={saving} onClick={() => {
+              setEditingId('');
+              setForm(emptyPerformanceForm(availableMatches[0]?.id || ''));
+            }}>
+              Cancelar edicao
+            </button>
+          )}
         </div>
+      </div>
+
+      <div className="panel performance-panel">
+        <h3>Historico por partida</h3>
+        {performances.length === 0 ? (
+          <EmptyState icon={Activity} title="Nenhum desempenho registrado." description="Cadastre o desempenho de uma partida para visualizar as estatisticas." />
+        ) : (
+          <div className="performance-history">
+            {performances.map((item) => (
+              <article className="performance-history-row" key={item.id}>
+                <div>
+                  <strong>{item.match?.away || 'Partida'}</strong>
+                  <span>{item.match?.dateKey || ''} | {item.match?.score || '-'}</span>
+                </div>
+                <small>G {item.goals} | A {item.assists} | R {item.recoveries} | Nota {item.rating}</small>
+                <div className="performance-actions">
+                  <button className="button minimal small" type="button" onClick={() => editPerformance(item)}>Editar</button>
+                  <button className="button minimal small danger" type="button" disabled={saving} onClick={() => removePerformance(item)}>Excluir</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="panel performance-panel">
+        <h3>Evolucao real</h3>
+        {performances.length === 0 ? (
+          <p className="settings-warning">Nenhum desempenho registrado.</p>
+        ) : (
+          <div className="performance-bars">
+            {performances.slice().reverse().slice(-8).map((item) => (
+              <div className="performance-bar" key={item.id}>
+                <span>{item.match?.away || 'Jogo'}</span>
+                <div><i style={{ width: `${Math.max(4, item.rating * 10)}%` }} /></div>
+                <small>{item.rating}</small>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -3222,39 +3496,43 @@ function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, cre
         <div className="panel club-control-card">
           <div className="card-title-row">
             <Users size={19} />
-            <h3>Administradores e permissoes</h3>
+            <h3>Usuarios cadastrados</h3>
           </div>
           <div className="member-list">
-          {users.filter((account) => account.role === 'admin').map((account) => (
-            <div className="member-row" key={account.id}>
-              <div className={`avatar small ${account.photo ? 'has-photo' : ''}`}>
-                {account.photo ? <img src={account.photo} alt={`Foto de ${account.nickname || account.name}`} /> : getInitials(account.nickname || account.name)}
-              </div>
-              <div className="member-copy">
-                <strong>{account.nickname || account.name}</strong>
-                <span>{account.email}</span>
-                <small>{account.accountStatus || 'active'} | Entrada: {account.joinedAt ? formatDateLabel(account.joinedAt.slice(0, 10)) : 'Nao informada'}</small>
-              </div>
-              <button
-                className={`role-badge ${account.role === 'admin' ? 'admin' : 'player'}`}
-                type="button"
-                onClick={async () => {
-                  const nextRole = account.role === 'admin' ? 'player' : 'admin';
-                  if (!window.confirm(`${nextRole === 'admin' ? 'Promover' : 'Remover permissao administrativa de'} ${account.nickname || account.name}?`)) {
-                    return;
-                  }
-                  try {
-                    await setUserRole(account, nextRole);
-                    notify(`${account.nickname} agora e ${roleLabel(nextRole)}.`);
-                  } catch (error) {
-                    notify(error.message || 'Nao foi possivel alterar a permissao.');
-                  }
-                }}
-              >
-                {roleLabel(account.role)}
-              </button>
-            </div>
-          ))}
+            {users.map((account) => {
+              const isFounder = account.staffRole === 'Fundador';
+              return (
+                <div className="member-row" key={account.id}>
+                  <div className={`avatar small ${account.photo ? 'has-photo' : ''}`}>
+                    {account.photo ? <img src={account.photo} alt={`Foto de ${account.nickname || account.name}`} /> : getInitials(account.nickname || account.name)}
+                  </div>
+                  <div className="member-copy">
+                    <strong>{account.name || account.nickname}</strong>
+                    <span>{account.nickname || 'Sem apelido'} | {account.email}</span>
+                    <small>{account.staffRole || roleLabel(account.role)} | {account.accountStatus || 'active'} | Entrada: {account.joinedAt ? formatDateLabel(account.joinedAt.slice(0, 10)) : 'Nao informada'} | Jogador: {account.hasPlayerProfile || account.playerId ? 'vinculado' : 'sem vinculo'}</small>
+                  </div>
+                  <button
+                    className={`role-badge ${account.role === 'admin' ? 'admin' : 'player'}`}
+                    type="button"
+                    disabled={isFounder && account.id !== user.id}
+                    onClick={async () => {
+                      const nextRole = account.role === 'admin' ? 'player' : 'admin';
+                      if (!window.confirm(`${nextRole === 'admin' ? 'Promover' : 'Rebaixar'} ${account.nickname || account.name}?`)) {
+                        return;
+                      }
+                      try {
+                        const updated = await setUserRole(account, nextRole);
+                        notify(`${account.nickname || account.name} agora e ${updated.staffRole || roleLabel(updated.role)}.`);
+                      } catch (error) {
+                        notify(error.message || 'Nao foi possivel alterar a permissao.');
+                      }
+                    }}
+                  >
+                    {isFounder ? 'Fundador' : roleLabel(account.role)}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="panel club-control-card match-control-card">
@@ -3426,37 +3704,107 @@ function readAppSettings() {
 
 function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences }) {
   const [settings, setSettings] = useState(readAppSettings);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState('');
   const isFounder = user.staffRole === 'Fundador';
   const canManagePermissions = isFounder || (user.role === 'admin' && settings.permissions.admin.managePermissions);
 
   useEffect(() => {
-    localStorage.setItem('torinnofc-settings', JSON.stringify(settings));
     document.documentElement.classList.toggle('light-theme', !settings.appearance.darkTheme);
   }, [settings]);
 
-  const updateSetting = (group, key) => {
-    setSettings({
+  useEffect(() => {
+    let active = true;
+    const loadSettings = async () => {
+      setSettingsLoading(true);
+      try {
+        const [personal, club, permissions] = await Promise.all([
+          fetchMySettings().catch(() => null),
+          user.role === 'admin' ? fetchClubSettings().catch(() => null) : Promise.resolve(null),
+          user.role === 'admin' ? fetchRolePermissions().catch(() => null) : Promise.resolve(null),
+        ]);
+        if (!active) return;
+        setSettings((current) => mergeSettings({
+          ...current,
+          ...personal,
+          ...club,
+          ...(permissions ? { permissions } : {}),
+        }));
+      } catch (error) {
+        if (active) notify(error.message || 'Nao foi possivel carregar configuracoes.');
+      } finally {
+        if (active) setSettingsLoading(false);
+      }
+    };
+
+    loadSettings();
+    return () => {
+      active = false;
+    };
+  }, [user.id, user.role]);
+
+  const updateSetting = async (group, key) => {
+    const previous = settings;
+    const next = {
       ...settings,
       [group]: { ...settings[group], [key]: !settings[group][key] },
-    });
+    };
+    setSettings(next);
+    setSavingKey(`${group}.${key}`);
+    try {
+      if (group === 'appearance' || group === 'notifications') {
+        const saved = await updateMySettings({
+          appearance: next.appearance,
+          notifications: next.notifications,
+        });
+        setSettings((current) => mergeSettings({ ...current, ...saved }));
+      } else {
+        const saved = await updateClubSettings({
+          rules: next.rules,
+          notifications: next.notifications,
+          matches: next.matches,
+          players: next.players,
+        });
+        setSettings((current) => mergeSettings({ ...current, ...saved }));
+      }
+      notify('Configuracao salva.');
+    } catch (error) {
+      setSettings(previous);
+      notify(error.message || 'Nao foi possivel salvar a configuracao.');
+    } finally {
+      setSavingKey('');
+    }
   };
 
-  const updatePermission = (role, key) => {
+  const updatePermission = async (role, key) => {
     if (!canManagePermissions) {
       notify('Apenas administradores autorizados podem alterar permissoes.');
       return;
     }
 
+    const previous = settings;
+    const enabled = !settings.permissions[role][key];
     setSettings({
       ...settings,
       permissions: {
         ...settings.permissions,
         [role]: {
           ...settings.permissions[role],
-          [key]: !settings.permissions[role][key],
+          [key]: enabled,
         },
       },
     });
+    setSavingKey(`${role}.${key}`);
+    try {
+      const permissions = await updateRolePermission(role, key, enabled);
+      setSettings((current) => mergeSettings({ ...current, permissions }));
+      notify('Permissao salva.');
+    } catch (error) {
+      setSettings(previous);
+      notify(error.message || 'Nao foi possivel salvar a permissao.');
+    } finally {
+      setSavingKey('');
+    }
   };
 
   const updateUserRole = async (account, nextStaffRole) => {
@@ -3490,6 +3838,7 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
   return (
     <section className="settings-page">
       <SectionHeader eyebrow="Preferencias" title="Configuracoes" />
+      {settingsLoading && <div className="settings-warning">Carregando configuracoes...</div>}
 
       <SettingsGroup title="Conta">
         <div className="panel settings-account-card">
@@ -3504,10 +3853,10 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
       </SettingsGroup>
 
       <SettingsGroup title="Geral">
-        <SettingsItem title="Tema escuro" checked={settings.appearance.darkTheme} onChange={() => updateSetting('appearance', 'darkTheme')} />
-        <SettingsItem title="Alertas de partidas" checked={settings.notifications.matchAlerts} onChange={() => updateSetting('notifications', 'matchAlerts')} />
-        <SettingsItem title="Novas partidas" checked={settings.notifications.newMatch} onChange={() => updateSetting('notifications', 'newMatch')} />
-        <SettingsItem title="Novas peneiras" checked={settings.notifications.newTryout} onChange={() => updateSetting('notifications', 'newTryout')} />
+        <SettingsItem title="Tema escuro" checked={settings.appearance.darkTheme} disabled={savingKey === 'appearance.darkTheme'} onChange={() => updateSetting('appearance', 'darkTheme')} />
+        <SettingsItem title="Alertas de partidas" checked={settings.notifications.matchAlerts} disabled={savingKey === 'notifications.matchAlerts'} onChange={() => updateSetting('notifications', 'matchAlerts')} />
+        <SettingsItem title="Novas partidas" checked={settings.notifications.newMatch} disabled={savingKey === 'notifications.newMatch'} onChange={() => updateSetting('notifications', 'newMatch')} />
+        <SettingsItem title="Novas peneiras" checked={settings.notifications.newTryout} disabled={savingKey === 'notifications.newTryout'} onChange={() => updateSetting('notifications', 'newTryout')} />
       </SettingsGroup>
 
       <SettingsGroup title="Preferencias de notificacoes">
@@ -3576,10 +3925,12 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
           </SettingsGroup>
 
           <SettingsGroup title="Regras">
-            <SettingsItem title="Admin cria partidas" checked={settings.matches.adminsCreateMatches} onChange={() => updateSetting('matches', 'adminsCreateMatches')} />
-            <SettingsItem title="Agenda para jogadores" checked={settings.matches.playersSeeFutureMatches} onChange={() => updateSetting('matches', 'playersSeeFutureMatches')} />
-            <SettingsItem title="Cadastro por admin" checked={settings.players.adminsCreatePlayers} onChange={() => updateSetting('players', 'adminsCreatePlayers')} />
-            <SettingsItem title="Jogador edita perfil" checked={settings.players.playersEditOwnProfile} onChange={() => updateSetting('players', 'playersEditOwnProfile')} />
+            <SettingsItem title="Admin cria partidas" checked={settings.matches.adminsCreateMatches} disabled={savingKey === 'matches.adminsCreateMatches'} onChange={() => updateSetting('matches', 'adminsCreateMatches')} />
+            <SettingsItem title="Jogadores veem agenda" checked={settings.matches.playersSeeFutureMatches} disabled={savingKey === 'matches.playersSeeFutureMatches'} onChange={() => updateSetting('matches', 'playersSeeFutureMatches')} />
+            <SettingsItem title="Cadastro de jogador pelo admin" checked={settings.players.adminsCreatePlayers} disabled={savingKey === 'players.adminsCreatePlayers'} onChange={() => updateSetting('players', 'adminsCreatePlayers')} />
+            <SettingsItem title="Jogador edita perfil" checked={settings.players.playersEditOwnProfile} disabled={savingKey === 'players.playersEditOwnProfile'} onChange={() => updateSetting('players', 'playersEditOwnProfile')} />
+            <SettingsItem title="Jogador edita estatisticas" checked={settings.players.playersEditOwnStats} disabled={savingKey === 'players.playersEditOwnStats'} onChange={() => updateSetting('players', 'playersEditOwnStats')} />
+            <SettingsItem title="Aprovacao de desempenho" checked={settings.players.requirePerformanceApproval} disabled={savingKey === 'players.requirePerformanceApproval'} onChange={() => updateSetting('players', 'requirePerformanceApproval')} />
           </SettingsGroup>
         </>
       )}

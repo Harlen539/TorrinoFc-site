@@ -24,7 +24,7 @@ npm run build
 
 O backend usa Prisma para acessar o Postgres do Supabase e facilitar migrations.
 
-O backend tambem possui uma API Node/Express para criar partidas e peneiras. Por padrao, o WhatsApp fica em modo manual, sem chave externa da Meta/Facebook Developers.
+O backend tambem possui uma API Node/Express para criar partidas, peneiras, desempenho por partida, relatorios PDF/CSV e configuracoes persistentes. Por padrao, o WhatsApp fica em modo manual, sem chave externa da Meta/Facebook Developers.
 
 ```bash
 cd back-end
@@ -41,9 +41,10 @@ Configure no `back-end/.env`:
 - `SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SECRET_KEY`
 - `SUPABASE_JWKS_URL`
-- `ADMIN_API_KEY`
 - `WHATSAPP_NOTIFICATION_MODE=manual`
 - `WHATSAPP_API_VERSION`
+
+O frontend nao deve usar chave administrativa `VITE_*`. Operacoes protegidas enviam `Authorization: Bearer <access_token>` do Supabase, e o backend consulta `profiles.role` como fonte de verdade.
 
 Para deploy no Render com Supabase Pooler, use `DATABASE_URL` na porta `6543` e `DIRECT_URL` na porta `5432`. O usuario do Pooler deve ser `postgres.<project-ref>`, nao apenas `postgres`.
 
@@ -61,6 +62,13 @@ O backend usa Prisma para acessar o Postgres e facilitar migrations:
 cd back-end
 npm run db:generate
 npm run db:migrate -- --name nome_da_migration
+```
+
+Para aplicar as migrations ja criadas neste repositorio:
+
+```bash
+cd back-end
+npm run db:deploy
 ```
 
 Em producao, aplique migrations com:

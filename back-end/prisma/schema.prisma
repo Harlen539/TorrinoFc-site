@@ -26,6 +26,7 @@ model Match {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   championship   Championship? @relation(fields: [championshipId], references: [id], onDelete: SetNull)
+  performances   PlayerMatchPerformance[]
 
   @@index([matchDate], map: "matches_match_date_idx")
   @@index([championshipId], map: "matches_championship_id_idx")
@@ -65,6 +66,8 @@ model UserProfile {
   joinedAt      DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  playerProfile PlayerProfile?
+  settings      UserSetting?
 
   @@index([role], map: "profiles_role_idx")
   @@map("profiles")
@@ -72,7 +75,7 @@ model UserProfile {
 
 model PlayerProfile {
   id           String       @id @default(uuid()) @db.Uuid
-  userId       String?      @map("user_id") @db.Uuid
+  userId       String?      @unique @map("user_id") @db.Uuid
   teamName     String       @default("Torinno FC") @map("team_name")
   fullName     String       @map("full_name")
   nickname     String
@@ -86,9 +89,12 @@ model PlayerProfile {
   photoUrl     String?      @map("photo_url")
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user         UserProfile? @relation(fields: [userId], references: [id], onDelete: SetNull)
   stats        PlayerStats?
+  performances PlayerMatchPerformance[]
 
   @@index([teamName, status], map: "player_profiles_team_status_idx")
+  @@index([userId], map: "player_profiles_user_id_idx")
   @@map("player_profiles")
 }
 
@@ -100,6 +106,8 @@ model PlayerStats {
   ballRecoveries Int           @default(0) @map("ball_recoveries")
   shots          Int           @default(0)
   accuratePasses Int           @default(0) @map("accurate_passes")
+  tackles        Int           @default(0)
+  interceptions  Int           @default(0)
   matches        Int           @default(0)
   wins           Int           @default(0)
   draws          Int           @default(0)
@@ -113,6 +121,70 @@ model PlayerStats {
   player         PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@map("player_stats")
+}
+
+model PlayerMatchPerformance {
+  id             String        @id @default(uuid()) @db.Uuid
+  playerId       String        @map("player_id") @db.Uuid
+  matchId        String        @map("match_id") @db.Uuid
+  goals          Int           @default(0)
+  assists        Int           @default(0)
+  ballRecoveries Int           @default(0) @map("ball_recoveries")
+  shots          Int           @default(0)
+  accuratePasses Int           @default(0) @map("accurate_passes")
+  tackles        Int           @default(0)
+  interceptions  Int           @default(0)
+  yellowCards    Int           @default(0) @map("yellow_cards")
+  redCards       Int           @default(0) @map("red_cards")
+  minutesPlayed  Int           @default(0) @map("minutes_played")
+  rating         Decimal       @default(0) @db.Decimal(3, 1)
+  notes          String?
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  player         PlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match          Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, matchId], map: "player_match_performances_player_match_key")
+  @@index([matchId], map: "player_match_performances_match_id_idx")
+  @@index([createdBy], map: "player_match_performances_created_by_idx")
+  @@map("player_match_performances")
+}
+
+model UserSetting {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @unique @map("user_id") @db.Uuid
+  data      Json        @default("{}")
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model ClubSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("club_settings")
+}
+
+model RolePermission {
+  id            String   @id @default(uuid()) @db.Uuid
+  role          String
+  permissionKey String   @map("permission_key")
+  enabled       Boolean  @default(false)
+  updatedBy     String?  @map("updated_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([role, permissionKey], map: "role_permissions_role_key")
+  @@index([role], map: "role_permissions_role_idx")
+  @@map("role_permissions")
 }
 
 model AdminAuditLog {

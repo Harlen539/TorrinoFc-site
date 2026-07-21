@@ -1,16 +1,11 @@
 import { hasSupabaseConfig, supabase } from './supabaseClient.js';
 
 const API_BASE_URL = (import.meta.env.VITE_ADMIN_API_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
-const ADMIN_API_KEY = import.meta.env.VITE_ADMIN_API_KEY || '';
 
-async function request(path, { method = 'GET', body, admin = false, userEmail = '' } = {}) {
+async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
   const headers = {
     'Content-Type': 'application/json',
   };
-
-  if (admin && ADMIN_API_KEY) {
-    headers['x-admin-api-key'] = ADMIN_API_KEY;
-  }
 
   if (hasSupabaseConfig) {
     const { data } = await supabase.auth.getSession();
@@ -67,19 +62,19 @@ export function fetchPlayers() {
 }
 
 export function createPlayer(payload) {
-  return request('/api/players', { method: 'POST', body: payload, admin: true }).then((data) => data.player);
+  return request('/api/players', { method: 'POST', body: payload }).then((data) => data.player);
 }
 
 export function updatePlayer(id, payload) {
-  return request(`/api/players/${id}`, { method: 'PUT', body: payload, admin: true }).then((data) => data.player);
+  return request(`/api/players/${id}`, { method: 'PUT', body: payload }).then((data) => data.player);
 }
 
 export function updatePlayerStats(id, payload) {
-  return request(`/api/players/${id}/stats`, { method: 'PUT', body: payload, admin: true }).then((data) => data.player);
+  return request(`/api/players/${id}/stats`, { method: 'PUT', body: payload }).then((data) => data.player);
 }
 
 export function deletePlayer(id) {
-  return request(`/api/players/${id}`, { method: 'DELETE', admin: true });
+  return request(`/api/players/${id}`, { method: 'DELETE' });
 }
 
 export function fetchTryouts() {
@@ -87,31 +82,31 @@ export function fetchTryouts() {
 }
 
 export function createTryout(payload) {
-  return request('/api/tryouts', { method: 'POST', body: payload, admin: true }).then((data) => data.tryout);
+  return request('/api/tryouts', { method: 'POST', body: payload }).then((data) => data.tryout);
 }
 
 export function updateTryout(id, payload) {
-  return request(`/api/tryouts/${id}`, { method: 'PUT', body: payload, admin: true }).then((data) => data.tryout);
+  return request(`/api/tryouts/${id}`, { method: 'PUT', body: payload }).then((data) => data.tryout);
 }
 
 export function updateTryoutStatus(id, status) {
-  return request(`/api/tryouts/${id}/status`, { method: 'PATCH', body: { status }, admin: true }).then((data) => data.tryout);
+  return request(`/api/tryouts/${id}/status`, { method: 'PATCH', body: { status } }).then((data) => data.tryout);
 }
 
 export function deleteTryout(id) {
-  return request(`/api/tryouts/${id}`, { method: 'DELETE', admin: true });
+  return request(`/api/tryouts/${id}`, { method: 'DELETE' });
 }
 
 export function createMatch(payload) {
-  return request('/api/matches', { method: 'POST', body: payload, admin: true }).then((data) => data.match);
+  return request('/api/matches', { method: 'POST', body: payload }).then((data) => data.match);
 }
 
 export function updateMatch(id, payload) {
-  return request(`/api/matches/${id}`, { method: 'PUT', body: payload, admin: true }).then((data) => data.match);
+  return request(`/api/matches/${id}`, { method: 'PUT', body: payload }).then((data) => data.match);
 }
 
 export function deleteMatch(id) {
-  return request(`/api/matches/${id}`, { method: 'DELETE', admin: true });
+  return request(`/api/matches/${id}`, { method: 'DELETE' });
 }
 
 export function fetchChampionships() {
@@ -119,19 +114,25 @@ export function fetchChampionships() {
 }
 
 export function createChampionship(payload) {
-  return request('/api/championships', { method: 'POST', body: payload, admin: true }).then((data) => data.championship);
+  return request('/api/championships', { method: 'POST', body: payload }).then((data) => data.championship);
 }
 
 export function updateChampionship(id, payload) {
-  return request(`/api/championships/${id}`, { method: 'PUT', body: payload, admin: true }).then((data) => data.championship);
+  return request(`/api/championships/${id}`, { method: 'PUT', body: payload }).then((data) => data.championship);
 }
 
 export function deleteChampionship(id) {
-  return request(`/api/championships/${id}`, { method: 'DELETE', admin: true });
+  return request(`/api/championships/${id}`, { method: 'DELETE' });
 }
 
 export function syncUser(payload) {
-  return request('/api/users/sync', { method: 'POST', body: payload, admin: true }).then((data) => data.user);
+  return request('/api/users/sync', { method: 'POST', body: payload }).then((data) => ({
+    ...data.user,
+    player: data.player,
+    playerId: data.playerId || data.user?.playerId || '',
+    role: data.role || data.user?.role,
+    staffRole: data.staffRole || data.user?.staffRole,
+  }));
 }
 
 export function fetchUsers() {
@@ -139,7 +140,96 @@ export function fetchUsers() {
 }
 
 export function updateUserRole(id, role) {
-  return request(`/api/users/${id}/role`, { method: 'PATCH', body: { role }, admin: true }).then((data) => data.user);
+  return request(`/api/users/${id}/role`, { method: 'PATCH', body: { role } }).then((data) => data.user);
+}
+
+export function fetchMyPerformance() {
+  return request('/api/me/performance');
+}
+
+export function createMyPerformance(payload) {
+  return request('/api/me/performance', { method: 'POST', body: payload });
+}
+
+export function updateMyPerformance(id, payload) {
+  return request(`/api/me/performance/${id}`, { method: 'PUT', body: payload });
+}
+
+export function deleteMyPerformance(id) {
+  return request(`/api/me/performance/${id}`, { method: 'DELETE' });
+}
+
+export function fetchPlayerPerformance(playerId) {
+  return request(`/api/players/${playerId}/performance`);
+}
+
+export function createPlayerPerformance(playerId, payload) {
+  return request(`/api/players/${playerId}/performance`, { method: 'POST', body: payload });
+}
+
+export function updatePlayerPerformance(playerId, performanceId, payload) {
+  return request(`/api/players/${playerId}/performance/${performanceId}`, { method: 'PUT', body: payload });
+}
+
+export function deletePlayerPerformance(playerId, performanceId) {
+  return request(`/api/players/${playerId}/performance/${performanceId}`, { method: 'DELETE' });
+}
+
+export function fetchMySettings() {
+  return request('/api/settings/me').then((data) => data.settings);
+}
+
+export function updateMySettings(settings) {
+  return request('/api/settings/me', { method: 'PUT', body: settings }).then((data) => data.settings);
+}
+
+export function fetchClubSettings() {
+  return request('/api/admin/settings').then((data) => data.settings);
+}
+
+export function updateClubSettings(settings) {
+  return request('/api/admin/settings', { method: 'PUT', body: settings }).then((data) => data.settings);
+}
+
+export function fetchRolePermissions() {
+  return request('/api/admin/permissions').then((data) => data.permissions);
+}
+
+export function updateRolePermission(role, permission, enabled) {
+  return request(`/api/admin/permissions/${role}/${permission}`, {
+    method: 'PUT',
+    body: { enabled },
+  }).then((data) => data.permissions);
+}
+
+export async function downloadPerformanceReport({ playerId = '', format = 'pdf' } = {}) {
+  const headers = {};
+  if (hasSupabaseConfig) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const path = playerId
+    ? `/api/players/${playerId}/performance/report?format=${encodeURIComponent(format)}`
+    : `/api/me/performance/report?format=${encodeURIComponent(format)}`;
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'Nao foi possivel baixar o relatorio.');
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] || `relatorio-desempenho.${format}`;
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 export function fetchNotifications(userEmail, { limit = 40, unread = false, type = '' } = {}) {

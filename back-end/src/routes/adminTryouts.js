@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { parseDateInput, parseTimeInput } from '../lib/dateInput.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
-import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
 
 export const adminTryoutsRouter = Router();
@@ -17,7 +17,7 @@ function validateTryoutPayload(body) {
   return errors;
 }
 
-adminTryoutsRouter.post('/api/admin/tryouts', requireAdminApiKey, async (request, response) => {
+adminTryoutsRouter.post('/api/admin/tryouts', requirePermission('manageTryouts'), async (request, response) => {
   const errors = validateTryoutPayload(request.body);
 
   if (errors.length > 0) {

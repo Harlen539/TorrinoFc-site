@@ -62,6 +62,8 @@ export function serializeUserProfile(profile) {
     accountStatus: profile.accountStatus,
     avatarUrl: profile.avatarUrl || '',
     joinedAt: profile.joinedAt,
+    playerId: profile.playerProfile?.id || '',
+    hasPlayerProfile: Boolean(profile.playerProfile?.id),
   };
 }
 
@@ -90,6 +92,8 @@ export function serializePlayer(player) {
       recoveries: stats.ballRecoveries || 0,
       shots: stats.shots || 0,
       passes: stats.accuratePasses || 0,
+      tackles: stats.tackles || 0,
+      interceptions: stats.interceptions || 0,
       matches: stats.matches || 0,
       wins: stats.wins || 0,
       draws: stats.draws || 0,

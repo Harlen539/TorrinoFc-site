@@ -4,7 +4,7 @@ import { isValidUrl, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeMatch } from '../lib/serializers.js';
-import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyMatchCancelled, notifyMatchCreated, notifyMatchUpdated } from '../services/notificationService.js';
 
 export const matchesRouter = Router();
@@ -57,7 +57,7 @@ matchesRouter.get('/api/matches', asyncRoute(async (_request, response) => {
   response.json({ matches: matches.map(serializeMatch) });
 }));
 
-matchesRouter.post('/api/matches', requireAdminUser, asyncRoute(async (request, response) => {
+matchesRouter.post('/api/matches', requirePermission('createMatch'), asyncRoute(async (request, response) => {
   const errors = validateMatchPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -76,7 +76,7 @@ matchesRouter.post('/api/matches', requireAdminUser, asyncRoute(async (request, 
   response.status(201).json({ match: serializeMatch(match) });
 }));
 
-matchesRouter.put('/api/matches/:id', requireAdminUser, asyncRoute(async (request, response) => {
+matchesRouter.put('/api/matches/:id', requirePermission('editMatch'), asyncRoute(async (request, response) => {
   const errors = validateMatchPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -94,7 +94,7 @@ matchesRouter.put('/api/matches/:id', requireAdminUser, asyncRoute(async (reques
   response.json({ match: serializeMatch(match) });
 }));
 
-matchesRouter.delete('/api/matches/:id', requireAdminUser, asyncRoute(async (request, response) => {
+matchesRouter.delete('/api/matches/:id', requirePermission('deleteMatch'), asyncRoute(async (request, response) => {
   const match = await prisma.match.findUnique({ where: { id: request.params.id } });
   await prisma.match.delete({ where: { id: request.params.id } });
   if (match) {

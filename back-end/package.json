@@ -8,7 +8,7 @@
     "render:build": "npm install && npm run db:generate",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/prisma.js && node --check src/lib/dateInput.js && node --check src/lib/sanitizeInput.js && node --check src/lib/httpValidation.js && node --check src/lib/serializers.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/services/notificationService.js && node --check src/services/reminderScheduler.js && node --check src/services/emailService.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js && node --check src/routes/adminEmail.js && node --check src/routes/matches.js && node --check src/routes/championships.js && node --check src/routes/users.js && node --check src/routes/notifications.js && node --check src/routes/tryouts.js && node --check src/routes/players.js",
+    "check": "node --check src/server.js && node --check src/config/env.js && node --check src/lib/prisma.js && node --check src/lib/dateInput.js && node --check src/lib/sanitizeInput.js && node --check src/lib/httpValidation.js && node --check src/lib/serializers.js && node --check src/middleware/requireAdminApiKey.js && node --check src/services/whatsappNotificationService.js && node --check src/services/notificationService.js && node --check src/services/reminderScheduler.js && node --check src/services/emailService.js && node --check src/services/playerSyncService.js && node --check src/services/performanceService.js && node --check src/services/settingsService.js && node --check src/routes/adminMatches.js && node --check src/routes/adminTryouts.js && node --check src/routes/adminEmail.js && node --check src/routes/matches.js && node --check src/routes/championships.js && node --check src/routes/users.js && node --check src/routes/notifications.js && node --check src/routes/performance.js && node --check src/routes/settings.js && node --check src/routes/tryouts.js && node --check src/routes/players.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
@@ -22,6 +22,7 @@
     "express": "^4.21.2",
     "helmet": "^8.3.0",
     "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {

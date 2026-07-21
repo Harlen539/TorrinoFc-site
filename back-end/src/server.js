@@ -8,7 +8,9 @@ import { adminTryoutsRouter } from './routes/adminTryouts.js';
 import { championshipsRouter } from './routes/championships.js';
 import { matchesRouter } from './routes/matches.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { performanceRouter } from './routes/performance.js';
 import { playersRouter } from './routes/players.js';
+import { settingsRouter } from './routes/settings.js';
 import { tryoutsRouter } from './routes/tryouts.js';
 import { usersRouter } from './routes/users.js';
 import { startReminderScheduler } from './services/reminderScheduler.js';
@@ -45,12 +47,14 @@ app.use(matchesRouter);
 app.use(championshipsRouter);
 app.use(usersRouter);
 app.use(notificationsRouter);
+app.use(performanceRouter);
 app.use(tryoutsRouter);
 app.use(playersRouter);
+app.use(settingsRouter);
 
 app.use((error, _request, response, _next) => {
   console.error('[server] Erro inesperado:', error);
-  response.status(500).json({ error: 'Erro interno do servidor.' });
+  response.status(error.statusCode || 500).json({ error: error.message || 'Erro interno do servidor.' });
 });
 
 app.listen(env.port, () => {

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer } from '../lib/serializers.js';
-import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
 
 export const playersRouter = Router();
@@ -40,6 +40,8 @@ function makeStatsData(body) {
     ballRecoveries: numberOrZero(body.recoveries || body.ballRecoveries),
     shots: numberOrZero(body.shots),
     accuratePasses: numberOrZero(body.passes || body.accuratePasses),
+    tackles: numberOrZero(body.tackles),
+    interceptions: numberOrZero(body.interceptions),
     matches: numberOrZero(body.matches),
     wins: numberOrZero(body.wins),
     draws: numberOrZero(body.draws),
@@ -65,7 +67,7 @@ playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
   response.json({ players: players.map(serializePlayer) });
 }));
 
-playersRouter.post('/api/players', requireAdminUser, asyncRoute(async (request, response) => {
+playersRouter.post('/api/players', requirePermission('createPlayer'), asyncRoute(async (request, response) => {
   const data = makePlayerData(request.body);
   if (!data.fullName || !data.nickname) {
     response.status(400).json({ error: 'Nome e apelido sao obrigatorios.' });
@@ -83,7 +85,7 @@ playersRouter.post('/api/players', requireAdminUser, asyncRoute(async (request, 
   response.status(201).json({ player: serializePlayer(player) });
 }));
 
-playersRouter.put('/api/players/:id', requireAdminUser, asyncRoute(async (request, response) => {
+playersRouter.put('/api/players/:id', requirePermission('editPlayer'), asyncRoute(async (request, response) => {
   const player = await prisma.playerProfile.update({
     where: { id: request.params.id },
     data: { ...makePlayerData(request.body), updatedAt: new Date() },
@@ -93,7 +95,7 @@ playersRouter.put('/api/players/:id', requireAdminUser, asyncRoute(async (reques
   response.json({ player: serializePlayer(player) });
 }));
 
-playersRouter.put('/api/players/:id/stats', requireAdminUser, asyncRoute(async (request, response) => {
+playersRouter.put('/api/players/:id/stats', requirePermission('editAnyPerformance'), asyncRoute(async (request, response) => {
   const player = await prisma.playerProfile.findUnique({ where: { id: request.params.id } });
   if (!player) {
     response.status(404).json({ error: 'Jogador nao encontrado.' });
@@ -121,10 +123,21 @@ playersRouter.put('/api/players/:id/stats', requireAdminUser, asyncRoute(async (
   response.json({ player: serializePlayer(updated) });
 }));
 
-playersRouter.delete('/api/players/:id', requireAdminUser, asyncRoute(async (request, response) => {
+playersRouter.delete('/api/players/:id', requirePermission('removePlayer'), asyncRoute(async (request, response) => {
+  const existing = await prisma.playerProfile.findUnique({ where: { id: request.params.id } });
   await prisma.playerProfile.update({
     where: { id: request.params.id },
     data: { status: 'Removido', updatedAt: new Date() },
+  });
+
+  await prisma.adminAuditLog.create({
+    data: {
+      actorId: request.userProfile?.id || null,
+      targetId: request.params.id,
+      action: 'remove_player',
+      beforeValue: existing ? { status: existing.status, nickname: existing.nickname } : null,
+      afterValue: { status: 'Removido' },
+    },
   });
 
   response.status(204).send();

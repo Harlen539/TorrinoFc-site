@@ -1902,6 +1902,65 @@ section {
   min-width: 190px;
 }
 
+.performance-player-card .performance-actions .button,
+.performance-history-row .performance-actions .button {
+  min-width: auto;
+}
+
+.performance-history {
+  display: grid;
+  gap: 10px;
+}
+
+.performance-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.performance-history-row strong,
+.performance-history-row span,
+.performance-history-row small {
+  display: block;
+}
+
+.performance-history-row span,
+.performance-history-row small {
+  color: var(--muted);
+}
+
+.performance-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.performance-bar {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.performance-bar div {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.performance-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--wine));
+}
+
 .compact-hero {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }

@@ -4,7 +4,7 @@ import { sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeTryout } from '../lib/serializers.js';
-import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
 
 export const tryoutsRouter = Router();
@@ -58,7 +58,7 @@ tryoutsRouter.get('/api/tryouts', asyncRoute(async (_request, response) => {
   response.json({ tryouts: tryouts.map(serializeTryout) });
 }));
 
-tryoutsRouter.post('/api/tryouts', requireAdminUser, asyncRoute(async (request, response) => {
+tryoutsRouter.post('/api/tryouts', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
   const errors = validateTryoutPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -79,7 +79,7 @@ tryoutsRouter.post('/api/tryouts', requireAdminUser, asyncRoute(async (request, 
   response.status(201).json({ tryout: serializeTryout(tryout) });
 }));
 
-tryoutsRouter.put('/api/tryouts/:id', requireAdminUser, asyncRoute(async (request, response) => {
+tryoutsRouter.put('/api/tryouts/:id', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
   const errors = validateTryoutPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -94,7 +94,7 @@ tryoutsRouter.put('/api/tryouts/:id', requireAdminUser, asyncRoute(async (reques
   response.json({ tryout: serializeTryout(tryout) });
 }));
 
-tryoutsRouter.patch('/api/tryouts/:id/status', requireAdminUser, asyncRoute(async (request, response) => {
+tryoutsRouter.patch('/api/tryouts/:id/status', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
   const tryout = await prisma.tryout.update({
     where: { id: request.params.id },
     data: {
@@ -106,7 +106,7 @@ tryoutsRouter.patch('/api/tryouts/:id/status', requireAdminUser, asyncRoute(asyn
   response.json({ tryout: serializeTryout(tryout) });
 }));
 
-tryoutsRouter.delete('/api/tryouts/:id', requireAdminUser, asyncRoute(async (request, response) => {
+tryoutsRouter.delete('/api/tryouts/:id', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
   await prisma.tryout.delete({ where: { id: request.params.id } });
   response.status(204).send();
 }));

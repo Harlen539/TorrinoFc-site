@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { parseDateInput, parseTimeInput } from '../lib/dateInput.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
-import { requireAdminApiKey } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { sendMatchNotification } from '../services/whatsappNotificationService.js';
 
 export const adminMatchesRouter = Router();
@@ -18,7 +18,7 @@ function validateMatchPayload(body) {
   return errors;
 }
 
-adminMatchesRouter.post('/api/admin/matches', requireAdminApiKey, async (request, response) => {
+adminMatchesRouter.post('/api/admin/matches', requirePermission('createMatch'), async (request, response) => {
   const errors = validateMatchPayload(request.body);
 
   if (errors.length > 0) {

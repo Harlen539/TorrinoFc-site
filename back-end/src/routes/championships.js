@@ -4,7 +4,7 @@ import { isValidUrl, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeChampionship } from '../lib/serializers.js';
-import { requireAdminUser } from '../middleware/requireAdminApiKey.js';
+import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyChampionshipCreated } from '../services/notificationService.js';
 
 export const championshipsRouter = Router();
@@ -51,7 +51,7 @@ championshipsRouter.get('/api/championships', asyncRoute(async (_request, respon
   response.json({ championships: championships.map(serializeChampionship) });
 }));
 
-championshipsRouter.post('/api/championships', requireAdminUser, asyncRoute(async (request, response) => {
+championshipsRouter.post('/api/championships', requirePermission('manageChampionships'), asyncRoute(async (request, response) => {
   const errors = validateChampionshipPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -68,7 +68,7 @@ championshipsRouter.post('/api/championships', requireAdminUser, asyncRoute(asyn
   response.status(201).json({ championship: serializeChampionship(championship) });
 }));
 
-championshipsRouter.put('/api/championships/:id', requireAdminUser, asyncRoute(async (request, response) => {
+championshipsRouter.put('/api/championships/:id', requirePermission('manageChampionships'), asyncRoute(async (request, response) => {
   const errors = validateChampionshipPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
@@ -82,7 +82,7 @@ championshipsRouter.put('/api/championships/:id', requireAdminUser, asyncRoute(a
   response.json({ championship: serializeChampionship(championship) });
 }));
 
-championshipsRouter.delete('/api/championships/:id', requireAdminUser, asyncRoute(async (request, response) => {
+championshipsRouter.delete('/api/championships/:id', requirePermission('manageChampionships'), asyncRoute(async (request, response) => {
   await prisma.championship.delete({ where: { id: request.params.id } });
   response.status(204).send();
 }));
