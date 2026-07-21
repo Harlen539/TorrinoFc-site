@@ -786,8 +786,7 @@ form {
   padding-right: 4px;
 }
 
-.side-nav button,
-.logout-button {
+.side-nav button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -802,14 +801,12 @@ form {
   transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
-.side-nav button:hover,
-.logout-button:hover {
+.side-nav button:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.045);
 }
 
-.side-nav button svg,
-.logout-button svg {
+.side-nav button svg {
   width: 16px;
   height: 16px;
 }
@@ -818,26 +815,6 @@ form {
   color: var(--gold);
   background: linear-gradient(135deg, rgba(74, 7, 18, 0.82), rgba(212, 162, 76, 0.1));
   box-shadow: inset 3px 0 0 var(--gold);
-}
-
-.logout-button {
-  margin-top: auto;
-}
-
-.sidebar-session-actions {
-  display: grid;
-  gap: 4px;
-  margin-top: auto;
-}
-
-.sidebar-session-actions .logout-button {
-  margin-top: 0;
-}
-
-.logout-button.subtle {
-  color: #d6bf85;
-  border: 1px solid rgba(212, 162, 76, 0.16);
-  background: rgba(212, 162, 76, 0.06);
 }
 
 .content-area {
@@ -870,14 +847,6 @@ form {
 
 .topbar strong {
   font-size: 17px;
-}
-
-.topbar-session-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-left: auto;
 }
 
 .icon-button,
@@ -2399,8 +2368,19 @@ textarea {
 }
 
 @media (max-width: 720px) {
-  .topbar-session-actions {
-    display: none;
+  .tryout-candidate-row,
+  .settings-refresh-card {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .calendar-day-actions,
+  .settings-refresh-card .button {
+    width: 100%;
+  }
+
+  .calendar-day-actions .button {
+    flex: 1 1 160px;
   }
 
   .logout-action-card {
@@ -2673,6 +2653,22 @@ textarea {
   align-content: start;
 }
 
+.tryout-candidates {
+  display: grid;
+  gap: 10px;
+}
+
+.tryout-candidate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.75fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.tryout-candidate-row .field {
+  margin: 0;
+}
+
 .tryout-info {
   display: flex;
   align-items: center;
@@ -2726,6 +2722,12 @@ textarea {
   margin-top: 4px;
 }
 
+.tryout-player-list {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+}
+
 .tryout-card em {
   margin-top: 7px;
   color: #f7dfaa;
@@ -2736,6 +2738,26 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.tryout-detail-list {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(212, 162, 76, 0.16);
+  border-radius: 12px;
+  background: rgba(212, 162, 76, 0.06);
+}
+
+.tryout-detail-list strong,
+.tryout-detail-list span {
+  display: block;
+}
+
+.tryout-detail-list span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .player-card {
@@ -2830,6 +2852,14 @@ textarea {
 
 .calendar-controls .button {
   min-height: 32px;
+}
+
+.calendar-day-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .calendar-toolbar {
@@ -3557,6 +3587,10 @@ textarea {
   color: #60a5fa;
 }
 
+.notification-type.tryout {
+  color: #fb7185;
+}
+
 .notification-type.statistics {
   color: #22c55e;
 }
@@ -3646,20 +3680,6 @@ textarea {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.settings-session-card {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-}
-
-.settings-session-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
 .settings-account-copy,
 .settings-password-copy {
   min-width: 0;
@@ -3735,6 +3755,42 @@ textarea {
   background: rgba(212, 162, 76, 0.08);
   font-size: 12px;
   font-weight: 800;
+}
+
+.settings-sync-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.settings-refresh-card {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.settings-refresh-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-refresh-card strong,
+.settings-refresh-card span,
+.settings-refresh-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-refresh-card span,
+.settings-refresh-card small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .logout-page {
@@ -3968,7 +4024,6 @@ textarea {
 }
 
 :root.light-theme .side-nav button,
-:root.light-theme .logout-button,
 :root.light-theme .match-card small,
 :root.light-theme .player-card span,
 :root.light-theme .ranking-card span,
@@ -4452,8 +4507,7 @@ section,
 }
 
 .button svg,
-.side-nav button svg,
-.logout-button svg {
+.side-nav button svg {
   width: 14px;
   height: 14px;
 }
@@ -4578,8 +4632,7 @@ section,
   gap: 3px;
 }
 
-.side-nav button,
-.logout-button {
+.side-nav button {
   min-height: 30px;
   padding: 0 8px;
   gap: 8px;

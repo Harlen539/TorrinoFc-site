@@ -30,6 +30,12 @@ function formatMatchDate(match) {
   return `${date} as ${time}`;
 }
 
+function formatTryoutDate(tryout) {
+  const date = tryout.tryoutDate?.toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' }) || 'data a definir';
+  const time = tryout.tryoutTime?.toISOString().slice(11, 16) || 'horario a definir';
+  return `${date} as ${time}`;
+}
+
 async function getRecipients({ adminsOnly = false } = {}) {
   const profiles = await prisma.userProfile.findMany({
     where: {
@@ -170,6 +176,25 @@ export async function notifyChampionshipCreated(championship) {
     relatedEntityId: championship.id,
     actionUrl: '/championships',
     metadata: { championshipName: championship.name },
+    sentAt: new Date(),
+    status: 'sent',
+  });
+}
+
+export async function notifyTryoutCreated(tryout) {
+  const recipients = await getRecipients();
+  await createNotificationsForRecipients(recipients, {
+    type: 'tryout_created',
+    title: 'Nova peneira agendada',
+    message: `Peneira ${compact(tryout.title, 'do clube')} marcada para ${formatTryoutDate(tryout)}.`,
+    relatedEntityType: 'tryout',
+    relatedEntityId: tryout.id,
+    actionUrl: '/calendar',
+    metadata: {
+      title: tryout.title,
+      category: tryout.category,
+      location: tryout.location,
+    },
     sentAt: new Date(),
     status: 'sent',
   });

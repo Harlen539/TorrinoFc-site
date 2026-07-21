@@ -6,6 +6,7 @@ import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanit
 import { serializeTryout } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { recordActivity } from '../services/activityService.js';
+import { notifyTryoutCreated } from '../services/notificationService.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
 
 export const tryoutsRouter = Router();
@@ -20,10 +21,21 @@ function numberOrNull(value) {
   return Math.min(Math.round(number), 999);
 }
 
+function normalizeTryoutPlayers(body) {
+  const entries = Array.isArray(body.players) ? body.players : Array.isArray(body.candidates) ? body.candidates : [];
+  return entries
+    .map((player) => ({
+      name: sanitizeText(player.name || player.fullName, { maxLength: 80 }),
+      position: sanitizeText(player.position, { maxLength: 60, fallback: 'Atacante' }),
+    }))
+    .filter((player) => player.name);
+}
+
 function validateTryoutPayload(body) {
   const errors = [];
+  const players = normalizeTryoutPlayers(body);
 
-  if (!sanitizeText(body.title || body.fullName, { maxLength: 120 })) errors.push('EA ID / gamertag e obrigatorio.');
+  if (!sanitizeText(body.title || body.fullName, { maxLength: 120 }) && players.length === 0) errors.push('Informe pelo menos um jogador para a peneira.');
   if (!parseDateInput(body.tryout_date || body.date)) errors.push('Data da peneira precisa estar no formato YYYY-MM-DD.');
   if (body.tryout_time || body.time) {
     if (!parseTimeInput(body.tryout_time || body.time)) errors.push('Horario da peneira precisa estar no formato HH:mm.');
@@ -33,16 +45,27 @@ function validateTryoutPayload(body) {
 }
 
 function makeTryoutData(body) {
+  const players = normalizeTryoutPlayers(body);
+  const title = sanitizeText(
+    body.title || body.fullName || (players.length === 1 ? players[0].name : `${players.length} jogadores`),
+    { maxLength: 120 },
+  );
+  const positions = players.length ? [...new Set(players.map((player) => player.position))].join(', ') : '';
+  const requirementsText = sanitizeNullableText(body.requirements, { maxLength: 700 });
+  const requirements = players.length
+    ? JSON.stringify({ players, requirements: requirementsText || '' })
+    : requirementsText;
+
   return {
     teamName: 'Torinno FC',
-    title: sanitizeText(body.title || body.fullName, { maxLength: 120 }),
+    title,
     overall: numberOrNull(body.overall || body.age),
     tryoutDate: parseDateInput(body.tryout_date || body.date),
     tryoutTime: parseTimeInput(body.tryout_time || body.time),
     location: sanitizeNullableText(body.location || body.place, { maxLength: 140 }),
-    category: sanitizeText(body.category || body.position, { maxLength: 60, fallback: 'Geral' }),
+    category: sanitizeText(body.category || body.position || positions, { maxLength: 160, fallback: 'Geral' }),
     contact: sanitizeNullableText(body.contact, { maxLength: 120 }),
-    requirements: sanitizeNullableText(body.requirements, { maxLength: 300 }),
+    requirements,
     observations: sanitizeNullableText(body.observations || body.notes, { maxLength: 700 }),
     status: sanitizeStatus(body.status),
   };
@@ -76,6 +99,7 @@ tryoutsRouter.post('/api/tryouts', requirePermission('manageTryouts'), asyncRout
   await sendTryoutNotification(tryout.id).catch((error) => {
     console.error('[tryouts] Falha ao enviar notificacao da peneira:', error);
   });
+  await notifyTryoutCreated(tryout);
   await recordActivity({
     type: 'tryout_created',
     actorId: request.userProfile?.id || null,

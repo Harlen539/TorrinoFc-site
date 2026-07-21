@@ -106,7 +106,34 @@ export function serializePlayer(player) {
   };
 }
 
+function parseTryoutRequirements(value = '') {
+  if (!value || typeof value !== 'string') {
+    return { players: [], requirements: '' };
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed?.players)) {
+      return {
+        players: parsed.players
+          .map((player) => ({
+            name: String(player.name || '').trim(),
+            position: String(player.position || 'Atacante').trim() || 'Atacante',
+          }))
+          .filter((player) => player.name),
+        requirements: parsed.requirements || '',
+      };
+    }
+  } catch {
+    // Peneiras antigas continuam usando requirements como texto livre.
+  }
+
+  return { players: [], requirements: value };
+}
+
 export function serializeTryout(tryout) {
+  const parsedRequirements = parseTryoutRequirements(tryout.requirements);
+
   return {
     id: tryout.id,
     teamName: tryout.teamName || 'Torinno FC',
@@ -116,6 +143,8 @@ export function serializeTryout(tryout) {
     overall: tryout.overall || '',
     position: tryout.category || 'Geral',
     contact: tryout.contact || '',
+    players: parsedRequirements.players,
+    requirements: parsedRequirements.requirements,
     date: formatDate(tryout.tryoutDate),
     time: formatTime(tryout.tryoutTime),
     place: tryout.location || 'EA FC 26 | Clubs',

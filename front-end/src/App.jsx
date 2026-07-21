@@ -17,6 +17,7 @@ import {
   LogOut,
   Menu,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Settings,
@@ -94,6 +95,22 @@ const initialTryouts = [];
 
 const localUsersKey = 'torinnofc-users-cache';
 const localPlayersKey = 'torinnofc-players-cache';
+const localMatchesKey = 'torinnofc-matches-cache';
+const localTryoutsKey = 'torinnofc-tryouts-cache';
+const localChampionshipsKey = 'torinnofc-championships-cache';
+const localNotificationPreferencesKey = 'torinnofc-notification-preferences-cache';
+
+const defaultNotificationPreferences = {
+  matchCreated: true,
+  matchUpdated: true,
+  tryoutCreated: true,
+  matchReminder24h: true,
+  matchReminder1h: true,
+  championships: true,
+  newMembers: true,
+  statistics: true,
+  administration: true,
+};
 
 const navItems = [
   { id: 'dashboard', label: 'Painel', icon: Home },
@@ -219,21 +236,26 @@ function buildCalendarEvents(matches, tryouts = []) {
         source: 'match',
         title: `${normalized.home} x ${normalized.away}`,
         subtitle: `${normalized.time} | ${normalized.place} | ${normalized.status}`,
+        description: normalized.observations || `${normalized.championship || 'Partida'} contra ${normalized.away}.`,
         logo: normalized.opponentLogo,
       };
     }),
-    ...tryouts.map((tryout) => ({
-      ...tryout,
-      calendarId: `tryout-${tryout.id}`,
-      source: 'tryout',
-      type: 'Peneira',
-      dateKey: tryout.date,
-      time: tryout.time || 'A definir',
-      title: `Peneira: ${tryout.fullName || 'Novo jogador'}`,
-      subtitle: `${tryout.time || 'A definir'} | ${tryout.place || 'EA FC 26 | Clubs'} | ${tryout.status || 'Agendada'}`,
-      logo,
-      status: tryout.status || 'Agendada',
-    })),
+    ...tryouts.map((tryout) => {
+      const normalized = normalizeTryout(tryout);
+      return {
+        ...normalized,
+        calendarId: `tryout-${normalized.id}`,
+        source: 'tryout',
+        type: 'Peneira',
+        dateKey: normalized.date,
+        time: normalized.time || 'A definir',
+        title: `Peneira: ${normalized.fullName || 'Novo jogador'}`,
+        subtitle: `${normalized.time || 'A definir'} | ${normalized.place || 'EA FC 26 | Clubs'} | ${normalized.status || 'Agendada'}`,
+        description: normalized.notes || normalized.requirements || summarizeTryoutPlayers(normalized.players),
+        logo,
+        status: normalized.status || 'Agendada',
+      };
+    }),
   ];
 }
 
@@ -292,16 +314,23 @@ function buildMatchWhatsAppMessage(match) {
 }
 
 function buildTryoutWhatsAppMessage(tryout) {
+  const players = normalizeTryoutPlayers(tryout.players);
+
   return [
     'Nova peneira agendada - Torrino FC',
     '',
     `Data: ${formatDateLabel(tryout.date)}`,
     `Horario: ${tryout.time || 'A definir'}`,
     `Local: ${tryout.place || 'A definir'}`,
-    `Categoria: ${tryout.position || 'Geral'}`,
+    `Posicoes: ${tryout.position || 'Geral'}`,
+    '',
+    'Jogadores:',
+    players.length
+      ? players.map((player) => `- ${player.name} | ${player.position}`).join('\n')
+      : `- ${tryout.fullName || 'A definir'} | ${tryout.position || 'Geral'}`,
     '',
     'Requisitos:',
-    tryout.age ? `OVR ${tryout.age}` : 'Nao informado',
+    [tryout.age ? `OVR ${tryout.age}` : '', tryout.requirements || ''].filter(Boolean).join(' | ') || 'Nao informado',
     '',
     'Observacoes:',
     tryout.notes || 'Sem observacoes.',
@@ -348,7 +377,50 @@ function readSavedPlayers() {
 }
 
 function readSavedMatches() {
-  return initialMatches.map(normalizeMatchEvent);
+  try {
+    const saved = JSON.parse(localStorage.getItem(localMatchesKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeMatchEvent) : initialMatches.map(normalizeMatchEvent);
+  } catch {
+    return initialMatches.map(normalizeMatchEvent);
+  }
+}
+
+function readSavedTryouts() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(localTryoutsKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeTryout) : initialTryouts;
+  } catch {
+    return initialTryouts;
+  }
+}
+
+function readSavedNotificationPreferences() {
+  try {
+    return {
+      ...defaultNotificationPreferences,
+      ...JSON.parse(localStorage.getItem(localNotificationPreferencesKey) || '{}'),
+    };
+  } catch {
+    return defaultNotificationPreferences;
+  }
+}
+
+function normalizeChampionshipItem(championship) {
+  return {
+    ...championship,
+    id: championship.id || `local-championship-${Date.now()}`,
+    name: championship.name || 'Campeonato',
+    status: championship.status || 'futuro',
+  };
+}
+
+function readSavedChampionships() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(localChampionshipsKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeChampionshipItem) : [];
+  } catch {
+    return [];
+  }
 }
 
 function readSavedSession(users = readSavedUsers()) {
@@ -372,13 +444,54 @@ function readSavedSession(users = readSavedUsers()) {
   }
 }
 
+function normalizeTryoutPlayers(players = []) {
+  return (Array.isArray(players) ? players : [])
+    .map((player, index) => ({
+      id: player.id || `candidate-${index}`,
+      name: String(player.name || player.fullName || '').trim(),
+      position: String(player.position || 'Atacante').trim() || 'Atacante',
+    }))
+    .filter((player) => player.name);
+}
+
+function parseTryoutRequirements(requirements = '') {
+  if (!requirements || typeof requirements !== 'string') return { players: [], requirements: '' };
+
+  try {
+    const parsed = JSON.parse(requirements);
+    if (Array.isArray(parsed?.players)) {
+      return {
+        players: normalizeTryoutPlayers(parsed.players),
+        requirements: parsed.requirements || '',
+      };
+    }
+  } catch {
+    // Requisitos antigos continuam como texto livre.
+  }
+
+  return { players: [], requirements };
+}
+
+function summarizeTryoutPlayers(players = []) {
+  const normalized = normalizeTryoutPlayers(players);
+  if (normalized.length === 0) return 'Jogadores a definir';
+  if (normalized.length === 1) return `${normalized[0].name} (${normalized[0].position})`;
+  return `${normalized.length} jogadores: ${normalized.map((player) => `${player.name} - ${player.position}`).join(', ')}`;
+}
+
 function normalizeTryout(tryout) {
+  const parsedRequirements = parseTryoutRequirements(tryout.requirements);
+  const players = normalizeTryoutPlayers(tryout.players || tryout.candidates || parsedRequirements.players);
+  const fullName = tryout.fullName || tryout.title || (players.length ? summarizeTryoutPlayers(players) : 'Novo jogador');
+  const position = tryout.position || tryout.category || (players.length ? [...new Set(players.map((player) => player.position))].join(', ') : 'Geral');
+
   return {
     ...tryout,
     id: tryout.id || Date.now(),
-    fullName: tryout.fullName || tryout.title || 'Novo jogador',
+    fullName,
+    players,
     age: tryout.age || tryout.overall || '',
-    position: tryout.position || tryout.category || 'Geral',
+    position,
     contact: tryout.contact || '',
     date: tryout.date || tryout.tryoutDate || toDateKey(new Date()),
     time: tryout.time || tryout.tryoutTime || 'A definir',
@@ -386,6 +499,7 @@ function normalizeTryout(tryout) {
     notes: (tryout.notes || tryout.observations)?.toLowerCase().includes('chuteira')
       ? 'Teste em lobby privado. Entrar 10 min antes e usar headset.'
       : (tryout.notes || tryout.observations || ''),
+    requirements: parsedRequirements.requirements || tryout.requirements || '',
     status: tryout.status || 'Agendada',
   };
 }
@@ -487,6 +601,97 @@ function mergeUsers(...groups) {
   return [...map.values()];
 }
 
+function mergeById(normalizer, ...groups) {
+  const map = new Map();
+
+  for (const group of groups) {
+    for (const item of group || []) {
+      const normalized = normalizer(item);
+      map.set(normalized.id, { ...map.get(normalized.id), ...normalized });
+    }
+  }
+
+  return [...map.values()];
+}
+
+function mergeNotifications(...groups) {
+  const map = new Map();
+
+  for (const group of groups) {
+    for (const notification of group || []) {
+      if (!notification?.id) continue;
+      map.set(notification.id, { ...map.get(notification.id), ...notification });
+    }
+  }
+
+  return [...map.values()].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+}
+
+function makePlatformNotifications({ players = [], matches = [], tryouts = [], championships = [], activities = [] }) {
+  const activityItems = activities.map((activity) => ({
+    id: `local-activity-${activity.id}`,
+    type: activity.type || 'admin_activity',
+    title: activity.actorName || 'Atualizacao do clube',
+    message: activity.message,
+    actionUrl: activity.actionUrl || '',
+    metadata: activity.metadata || {},
+    isRead: true,
+    createdAt: activity.createdAt,
+  }));
+
+  const playerItems = players.map((player) => ({
+    id: `local-player-notification-${player.id}`,
+    type: 'member_joined',
+    title: 'Jogador no elenco',
+    message: `${player.nickname || player.fullName} esta cadastrado em Jogadores.`,
+    actionUrl: '/players',
+    metadata: { playerId: player.id },
+    isRead: true,
+    createdAt: player.createdAt || player.updatedAt || new Date().toISOString(),
+  }));
+
+  const matchItems = matches.map((match) => {
+    const normalized = normalizeMatchEvent(match);
+    return {
+      id: `local-match-notification-${normalized.id}`,
+      type: normalized.status === 'Encerrada' ? 'match_updated' : 'match_created',
+      title: normalized.status === 'Encerrada' ? 'Resultado atualizado' : 'Partida agendada',
+      message: `${normalized.home} x ${normalized.away} em ${formatDateLabel(normalized.dateKey)} as ${normalized.time || 'A definir'}.`,
+      actionUrl: '/calendar',
+      metadata: { matchId: normalized.id, whatsappUrl: normalized.whatsappUrl },
+      isRead: true,
+      createdAt: normalized.createdAt || normalized.updatedAt || normalized.dateKey || new Date().toISOString(),
+    };
+  });
+
+  const tryoutItems = tryouts.map((tryout) => {
+    const normalized = normalizeTryout(tryout);
+    return {
+      id: `local-tryout-notification-${normalized.id}`,
+      type: 'tryout_created',
+      title: 'Peneira agendada',
+      message: `${summarizeTryoutPlayers(normalized.players)} em ${formatDateLabel(normalized.date)} as ${normalized.time || 'A definir'}.`,
+      actionUrl: '/calendar',
+      metadata: { tryoutId: normalized.id },
+      isRead: true,
+      createdAt: normalized.createdAt || normalized.updatedAt || normalized.date || new Date().toISOString(),
+    };
+  });
+
+  const championshipItems = championships.map((championship) => ({
+    id: `local-championship-notification-${championship.id}`,
+    type: 'championship_created',
+    title: 'Campeonato no calendario',
+    message: `${championship.name} esta cadastrado na plataforma.`,
+    actionUrl: '/championships',
+    metadata: { championshipId: championship.id },
+    isRead: true,
+    createdAt: championship.createdAt || championship.updatedAt || championship.startDate || new Date().toISOString(),
+  }));
+
+  return mergeNotifications(activityItems, playerItems, matchItems, tryoutItems, championshipItems).slice(0, 80);
+}
+
 function publicUser(user) {
   const normalized = normalizeUser(user);
   const safeUser = { ...normalized };
@@ -510,13 +715,13 @@ function App() {
   const [view, setView] = useState(session ? 'dashboard' : 'landing');
   const [players, setPlayers] = useState(readSavedPlayers);
   const [matches, setMatches] = useState(readSavedMatches);
-  const [championships, setChampionships] = useState([]);
+  const [championships, setChampionships] = useState(readSavedChampionships);
   const [serverState, setServerState] = useState({ loading: true, error: '' });
   const [notificationsState, setNotificationsState] = useState({ loading: false, error: '', items: [], unreadCount: 0 });
-  const [notificationPreferences, setNotificationPreferences] = useState(null);
+  const [notificationPreferences, setNotificationPreferences] = useState(readSavedNotificationPreferences);
   const [activities, setActivities] = useState([]);
   const [achievements, setAchievements] = useState([]);
-  const [tryouts, setTryouts] = useState(initialTryouts);
+  const [tryouts, setTryouts] = useState(readSavedTryouts);
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
   const [celebrating, setCelebrating] = useState(false);
@@ -528,6 +733,24 @@ function App() {
   useEffect(() => {
     localStorage.setItem(localPlayersKey, JSON.stringify(players));
   }, [players]);
+
+  useEffect(() => {
+    localStorage.setItem(localMatchesKey, JSON.stringify(matches));
+  }, [matches]);
+
+  useEffect(() => {
+    localStorage.setItem(localTryoutsKey, JSON.stringify(tryouts));
+  }, [tryouts]);
+
+  useEffect(() => {
+    localStorage.setItem(localChampionshipsKey, JSON.stringify(championships));
+  }, [championships]);
+
+  useEffect(() => {
+    if (notificationPreferences) {
+      localStorage.setItem(localNotificationPreferencesKey, JSON.stringify(notificationPreferences));
+    }
+  }, [notificationPreferences]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBooting(false), 1850);
@@ -560,17 +783,17 @@ function App() {
     const [matchesResult, championshipsResult, playersResult, tryoutsResult, usersResult] = results;
 
     if (matchesResult.status === 'fulfilled') {
-      setMatches(matchesResult.value.map(normalizeMatchEvent));
+      setMatches(mergeById(normalizeMatchEvent, readSavedMatches(), matchesResult.value));
     }
     if (championshipsResult.status === 'fulfilled') {
-      setChampionships(championshipsResult.value);
+      setChampionships(mergeById(normalizeChampionshipItem, readSavedChampionships(), championshipsResult.value));
     }
     if (playersResult.status === 'fulfilled') {
       const cachedPlayers = readSavedPlayers();
       setPlayers(mergePlayers(cachedPlayers, playersResult.value.map(normalizePlayer)));
     }
     if (tryoutsResult.status === 'fulfilled') {
-      setTryouts(tryoutsResult.value.map(normalizeTryout));
+      setTryouts(mergeById(normalizeTryout, readSavedTryouts(), tryoutsResult.value));
     }
     if (usersResult.status === 'fulfilled') {
       const cachedUsers = readSavedUsers();
@@ -671,9 +894,9 @@ function App() {
     const loadPreferences = async () => {
       try {
         const preferences = await fetchNotificationPreferences(session.email);
-        if (active) setNotificationPreferences(preferences);
+        if (active) setNotificationPreferences({ ...defaultNotificationPreferences, ...preferences });
       } catch {
-        if (active) setNotificationPreferences(null);
+        if (active) setNotificationPreferences(readSavedNotificationPreferences());
       }
     };
 
@@ -922,9 +1145,23 @@ function App() {
 
   const saveMatch = async (match, existingId) => {
     const payload = toMatchPayload(match);
-    const saved = existingId
-      ? await apiUpdateMatch(existingId, payload)
-      : await apiCreateMatch(payload);
+    const fallbackMatch = normalizeMatchEvent({
+      ...match,
+      id: existingId || `local-match-${Date.now()}`,
+      localOnly: true,
+    });
+    let saved;
+
+    try {
+      saved = existingId && !String(existingId).startsWith('local-')
+        ? await apiUpdateMatch(existingId, payload)
+        : !existingId
+          ? await apiCreateMatch(payload)
+          : fallbackMatch;
+    } catch {
+      saved = fallbackMatch;
+    }
+
     setMatches((items) => {
       const normalized = normalizeMatchEvent(saved);
       return existingId
@@ -936,15 +1173,28 @@ function App() {
   };
 
   const removeMatch = async (matchId) => {
-    await apiDeleteMatch(matchId);
+    if (!String(matchId).startsWith('local-')) {
+      await apiDeleteMatch(matchId).catch(() => null);
+    }
     setMatches((items) => items.filter((match) => match.id !== matchId));
     await refreshClubData({ silent: true });
   };
 
   const saveChampionship = async (championship, existingId) => {
-    const saved = existingId
-      ? await apiUpdateChampionship(existingId, championship)
-      : await apiCreateChampionship(championship);
+    let saved;
+    try {
+      saved = existingId && !String(existingId).startsWith('local-')
+        ? await apiUpdateChampionship(existingId, championship)
+        : !existingId
+          ? await apiCreateChampionship(championship)
+          : normalizeChampionshipItem({ ...championship, id: existingId, localOnly: true });
+    } catch {
+      saved = normalizeChampionshipItem({
+        ...championship,
+        id: existingId || `local-championship-${Date.now()}`,
+        localOnly: true,
+      });
+    }
     setChampionships((items) => (
       existingId
         ? items.map((item) => (item.id === existingId ? saved : item))
@@ -955,7 +1205,9 @@ function App() {
   };
 
   const removeChampionship = async (championshipId) => {
-    await apiDeleteChampionship(championshipId);
+    if (!String(championshipId).startsWith('local-')) {
+      await apiDeleteChampionship(championshipId).catch(() => null);
+    }
     setChampionships((items) => items.filter((championship) => championship.id !== championshipId));
     await refreshClubData({ silent: true });
   };
@@ -1014,38 +1266,54 @@ function App() {
 
   const refreshNotifications = async () => {
     if (!session?.email) return;
-    const payload = await fetchNotifications(session.email, { limit: 50 });
-    setNotificationsState({
-      loading: false,
-      error: '',
-      items: payload.notifications || [],
-      unreadCount: payload.unreadCount || 0,
-    });
+    try {
+      const payload = await fetchNotifications(session.email, { limit: 50 });
+      setNotificationsState({
+        loading: false,
+        error: '',
+        items: payload.notifications || [],
+        unreadCount: payload.unreadCount || 0,
+      });
+    } catch {
+      setNotificationsState((state) => ({
+        ...state,
+        loading: false,
+        error: 'Nao foi possivel carregar notificacoes do servidor.',
+      }));
+    }
   };
 
   const markNotificationRead = async (id, isRead = true) => {
     if (!session?.email) return;
+    if (String(id).startsWith('local-')) return;
     await apiMarkNotificationRead(id, session.email, isRead);
     await refreshNotifications();
   };
 
   const markAllNotificationsRead = async () => {
     if (!session?.email) return;
+    if (notificationsState.items.length === 0) return;
     await apiMarkAllNotificationsRead(session.email);
     await refreshNotifications();
   };
 
   const deleteNotification = async (id) => {
     if (!session?.email) return;
+    if (String(id).startsWith('local-')) return;
     await apiDeleteNotification(id, session.email);
     await refreshNotifications();
   };
 
   const saveNotificationPreferences = async (preferences) => {
     if (!session?.email) return;
-    const saved = await updateNotificationPreferences(session.email, preferences);
-    setNotificationPreferences(saved);
+    let saved = preferences;
+    try {
+      saved = { ...defaultNotificationPreferences, ...await updateNotificationPreferences(session.email, preferences) };
+    } catch {
+      saved = preferences;
+    }
     await refreshClubData({ silent: true });
+    setNotificationPreferences(saved);
     notify('Preferencias de notificacoes atualizadas.');
   };
 
@@ -1107,6 +1375,13 @@ function App() {
     );
   }
 
+  const platformNotifications = makePlatformNotifications({ players, matches, tryouts, championships, activities });
+  const combinedNotificationsState = {
+    ...notificationsState,
+    items: mergeNotifications(notificationsState.items, platformNotifications),
+    unreadCount: notificationsState.unreadCount || 0,
+  };
+
   return (
     <DashboardShell
       user={session}
@@ -1114,7 +1389,7 @@ function App() {
       setView={setView}
       onLogout={logout}
       onLogoutAllDevices={logoutAllDevices}
-      notificationsState={notificationsState}
+      notificationsState={combinedNotificationsState}
       markNotificationRead={markNotificationRead}
       markAllNotificationsRead={markAllNotificationsRead}
       refreshNotifications={refreshNotifications}
@@ -1140,7 +1415,7 @@ function App() {
         removePlayer={removePlayer}
         serverState={serverState}
         setUserRole={setUserRole}
-        notificationsState={notificationsState}
+        notificationsState={combinedNotificationsState}
         markNotificationRead={markNotificationRead}
         markAllNotificationsRead={markAllNotificationsRead}
         deleteNotification={deleteNotification}
@@ -1544,6 +1819,7 @@ function NotificationsPage({ notificationsState, markNotificationRead, markAllNo
     Todas: null,
     'Nao lidas': 'unread',
     Partidas: 'match',
+    Peneiras: 'tryout',
     Campeonatos: 'championship',
     Elenco: 'member',
     Estatisticas: 'statistics',
@@ -1572,8 +1848,12 @@ function NotificationsPage({ notificationsState, markNotificationRead, markAllNo
           className="button minimal"
           type="button"
           onClick={async () => {
-            await markAllNotificationsRead();
-            notify('Todas as notificacoes foram marcadas como lidas.');
+            try {
+              await markAllNotificationsRead();
+              notify('Todas as notificacoes foram marcadas como lidas.');
+            } catch {
+              notify('Notificacoes locais ja estao atualizadas.');
+            }
           }}
         >
           Marcar todas como lidas
@@ -1587,7 +1867,7 @@ function NotificationsPage({ notificationsState, markNotificationRead, markAllNo
         ))}
       </div>
       {notificationsState?.loading && <div className="empty-state">Carregando notificacoes...</div>}
-      {!notificationsState?.loading && notificationsState?.error && (
+      {!notificationsState?.loading && notificationsState?.error && items.length === 0 && (
         <div className="empty-state-card notification-empty-page">
           <div className="icon-tile gold">
             <Bell size={16} />
@@ -1600,6 +1880,9 @@ function NotificationsPage({ notificationsState, markNotificationRead, markAllNo
             Tentar novamente
           </button>
         </div>
+      )}
+      {!notificationsState?.loading && notificationsState?.error && items.length > 0 && (
+        <div className="settings-warning">Mostrando atualizacoes locais enquanto o servidor de notificacoes nao responde.</div>
       )}
       {!notificationsState?.loading && !notificationsState?.error && items.length === 0 && (
         <EmptyState icon={Bell} title="Nao ha notificacoes no momento." description="Novas partidas, atualizacoes do elenco e avisos importantes aparecerao aqui." />
@@ -1615,7 +1898,7 @@ function NotificationsPage({ notificationsState, markNotificationRead, markAllNo
                   notification={notification}
                   onOpen={() => openNotification(notification)}
                   onToggleRead={() => markNotificationRead(notification.id, !notification.isRead)}
-                  onDelete={async () => {
+                  onDelete={String(notification.id).startsWith('local-') ? null : async () => {
                     await deleteNotification(notification.id);
                     notify('Notificacao excluida.');
                   }}
@@ -2924,16 +3207,42 @@ function Players({ players, setView, setSelectedPlayerId }) {
 
 function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
   const [form, setForm] = useState({
-    fullName: '',
+    players: [{ id: 'candidate-1', name: '', position: 'Atacante' }],
     age: '',
-    position: 'Atacante',
     contact: '',
     date: toDateKey(addDays(new Date(), 1)),
     time: '18:00',
     place: 'EA FC 26 | Clubs',
+    requirements: '',
     notes: '',
   });
   const isAdmin = user?.role === 'admin';
+
+  const updateCandidate = (id, patch) => {
+    setForm((current) => ({
+      ...current,
+      players: current.players.map((player) => (player.id === id ? { ...player, ...patch } : player)),
+    }));
+  };
+
+  const addCandidate = () => {
+    setForm((current) => ({
+      ...current,
+      players: [
+        ...current.players,
+        { id: `candidate-${Date.now()}`, name: '', position: 'Atacante' },
+      ],
+    }));
+  };
+
+  const removeCandidate = (id) => {
+    setForm((current) => ({
+      ...current,
+      players: current.players.length <= 1
+        ? current.players
+        : current.players.filter((player) => player.id !== id),
+    }));
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -2941,45 +3250,53 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
       notify('Somente administradores podem agendar peneiras.');
       return;
     }
-    if (!form.fullName.trim() || !form.contact.trim() || !form.date || !form.time) {
-      notify('Preencha EA ID, contato, data e horario do teste.');
+    const candidates = normalizeTryoutPlayers(form.players);
+    if (candidates.length === 0 || !form.date || !form.time) {
+      notify('Preencha pelo menos um jogador, data e horario da peneira.');
       return;
     }
 
     const tryout = {
-      id: Date.now(),
+      id: `local-tryout-${Date.now()}`,
       ...form,
+      fullName: summarizeTryoutPlayers(candidates),
+      players: candidates,
+      position: [...new Set(candidates.map((player) => player.position))].join(', '),
       age: Number(form.age) || '',
       status: 'Agendada',
+      requirements: form.requirements,
     };
+    let normalized;
 
     try {
       const saved = await apiCreateTryout(tryout);
-      const normalized = normalizeTryout(saved);
-      setTryouts([normalized, ...tryouts]);
+      normalized = normalizeTryout(saved);
       await refreshClubData?.({ silent: true });
-      openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(normalized), notify);
       notify('Peneira agendada e salva no banco.');
-    } catch (error) {
-      notify(error.message || 'Nao foi possivel agendar a peneira.');
-      return;
+    } catch {
+      normalized = normalizeTryout({ ...tryout, localOnly: true });
+      notify('Peneira criada localmente. Ela aparece no calendario; o banco sincroniza quando voltar.');
     }
 
+    setTryouts((items) => mergeById(normalizeTryout, [normalized], items));
+    openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(normalized), notify);
     setForm({
-      fullName: '',
+      players: [{ id: 'candidate-1', name: '', position: 'Atacante' }],
       age: '',
-      position: 'Atacante',
       contact: '',
       date: toDateKey(addDays(new Date(), 1)),
       time: '18:00',
       place: 'EA FC 26 | Clubs',
+      requirements: '',
       notes: '',
     });
   };
 
   const updateStatus = async (id, status) => {
     try {
-      const saved = await apiUpdateTryoutStatus(id, status);
+      const saved = String(id).startsWith('local-')
+        ? { ...tryouts.find((tryout) => tryout.id === id), status }
+        : await apiUpdateTryoutStatus(id, status);
       setTryouts(tryouts.map((tryout) => (tryout.id === id ? normalizeTryout(saved) : tryout)));
       await refreshClubData?.({ silent: true });
       notify(`Teste marcado como ${status.toLowerCase()}.`);
@@ -2990,7 +3307,9 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
 
   const removeTryout = async (id) => {
     try {
-      await apiDeleteTryout(id);
+      if (!String(id).startsWith('local-')) {
+        await apiDeleteTryout(id);
+      }
       setTryouts(tryouts.filter((item) => item.id !== id));
       await refreshClubData?.({ silent: true });
       notify('Teste removido.');
@@ -3005,20 +3324,31 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
       <div className="tryout-layout">
         {isAdmin ? (
           <form className="panel tryout-form" onSubmit={submit}>
-            <h3>Novo teste no EA FC</h3>
-            <div className="form-grid">
-              <Field label="EA ID / gamertag" value={form.fullName} onChange={(fullName) => setForm({ ...form, fullName })} />
-              <Field label="Overall" type="number" value={form.age} onChange={(age) => setForm({ ...form, age })} />
+            <h3>Nova peneira no EA FC</h3>
+            <div className="tryout-candidates">
+              {form.players.map((candidate, index) => (
+                <div className="tryout-candidate-row" key={candidate.id}>
+                  <Field label={`Jogador ${index + 1}`} value={candidate.name} onChange={(name) => updateCandidate(candidate.id, { name })} />
+                  <label className="field">
+                    <span>Posicao</span>
+                    <select value={candidate.position} onChange={(event) => updateCandidate(candidate.id, { position: event.target.value })}>
+                      {gamePositions.map((position) => (
+                        <option key={position}>{position}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className="button minimal danger" type="button" disabled={form.players.length <= 1} onClick={() => removeCandidate(candidate.id)}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+              <button className="button secondary" type="button" onClick={addCandidate}>
+                <Plus size={16} />
+                Adicionar jogador
+              </button>
             </div>
             <div className="form-grid">
-              <label className="field">
-                <span>Posicao no jogo</span>
-                <select value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })}>
-                  {gamePositions.map((position) => (
-                    <option key={position}>{position}</option>
-                  ))}
-                </select>
-              </label>
+              <Field label="OVR minimo" type="number" value={form.age} onChange={(age) => setForm({ ...form, age })} />
               <Field label="Contato / Discord" value={form.contact} onChange={(contact) => setForm({ ...form, contact })} />
             </div>
             <div className="form-grid three">
@@ -3026,6 +3356,14 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
               <Field label="Horario" type="time" value={form.time} onChange={(time) => setForm({ ...form, time })} />
               <Field label="Plataforma / modo" value={form.place} onChange={(place) => setForm({ ...form, place })} />
             </div>
+            <label className="field">
+              <span>Requisitos</span>
+              <textarea
+                value={form.requirements}
+                onChange={(event) => setForm({ ...form, requirements: event.target.value })}
+                placeholder="Ex: headset, disponibilidade, estilo de jogo, overall minimo"
+              />
+            </label>
             <label className="field">
               <span>Observacoes</span>
               <textarea
@@ -3068,10 +3406,18 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
                     {tryout.age ? `OVR ${tryout.age} | ` : ''}
                     {tryout.position}
                   </span>
+                  {tryout.players?.length > 0 && (
+                    <div className="tryout-player-list">
+                      {tryout.players.map((player) => (
+                        <small key={`${tryout.id}-${player.name}-${player.position}`}>{player.name} | {player.position}</small>
+                      ))}
+                    </div>
+                  )}
                   <small>
                     {formatDateLabel(tryout.date)} as {tryout.time} | {tryout.place}
                   </small>
                   <small>{tryout.contact}</small>
+                  {tryout.requirements && <em>{tryout.requirements}</em>}
                   {tryout.notes && <em>{tryout.notes}</em>}
                 </div>
                 {isAdmin && (
@@ -3111,7 +3457,7 @@ function Matches({ matches, saveMatch, notify }) {
   );
 }
 
-function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], championships = [], notify }) {
+function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], championships = [], notify, setView }) {
   const [monthDate, setMonthDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(toDateKey(new Date()));
   const [filter, setFilter] = useState('Todos');
@@ -3150,10 +3496,12 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
 
     setSaving(true);
     try {
-      await saveMatch(match, existingId);
+      const saved = await saveMatch(match, existingId);
       setSelectedDateKey(match.dateKey);
       setModal(null);
-      notify(existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
+      notify(saved?.localOnly
+        ? 'Partida salva localmente e exibida no calendario. O banco sincroniza quando voltar.'
+        : existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
       if (!existingId) {
         openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify);
       }
@@ -3242,7 +3590,6 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
               type="button"
               onClick={() => {
                 setSelectedDateKey(day.key);
-                if (isAdmin) openForm(day.key);
               }}
             >
               <span className="day-number">
@@ -3270,17 +3617,23 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
               <span>Dia selecionado</span>
               <h3>{selectedDateLabel}</h3>
             </div>
-            <button
-              className="button primary"
-              disabled={!isAdmin}
-              type="button"
-              onClick={() => {
-                openForm(selectedDateKey);
-              }}
-            >
-              <Plus size={15} />
-              Criar partida
-            </button>
+            <div className="calendar-day-actions">
+              <button
+                className="button primary"
+                disabled={!isAdmin}
+                type="button"
+                onClick={() => {
+                  openForm(selectedDateKey);
+                }}
+              >
+                <Plus size={15} />
+                Criar partida
+              </button>
+              <button className="button secondary" type="button" onClick={() => setView('tryouts')}>
+                <UserPlus size={15} />
+                Criar peneira
+              </button>
+            </div>
           </div>
           <div className="selected-events">
             {selectedEvents.map((event) => (
@@ -3296,17 +3649,20 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
                 <div>
                   <strong>{event.title}</strong>
                   <span>{event.subtitle}</span>
+                  {event.description && <small>{event.description}</small>}
                   {event.championship && <small>{event.championship}</small>}
                 </div>
                 <div className="event-actions">
                   <small className={`event-status ${getEventStatus(event).toLowerCase().replace(/\s+/g, '-')}`}>{getEventStatus(event)}</small>
-                  {event.source === 'match' && (
-                    <>
-                      <button className="button minimal small" type="button" onClick={() => setModal({ type: 'details', dateKey: event.dateKey, match: event })}>
-                        Detalhes
-                      </button>
-                    </>
-                  )}
+                  <button
+                    className="button minimal small"
+                    type="button"
+                    onClick={() => setModal(event.source === 'match'
+                      ? { type: 'details', dateKey: event.dateKey, match: event }
+                      : { type: 'tryout-details', dateKey: event.dateKey, tryout: event })}
+                  >
+                    Detalhes
+                  </button>
                 </div>
               </article>
             ))}
@@ -3314,7 +3670,10 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
           </div>
         </div>
       </div>
-      {modal && (
+      {modal?.type === 'tryout-details' && (
+        <TryoutDetailModal tryout={modal.tryout} onClose={() => setModal(null)} />
+      )}
+      {modal && modal.type !== 'tryout-details' && (
         <MatchModal
           modal={modal}
           championships={championships}
@@ -3327,6 +3686,57 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
         />
       )}
     </section>
+  );
+}
+
+function TryoutDetailModal({ tryout, onClose }) {
+  const players = normalizeTryoutPlayers(tryout.players);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="panel app-modal" role="dialog" aria-modal="true" aria-labelledby="tryout-modal-title">
+        <div className="modal-head">
+          <div>
+            <span>Detalhes da peneira</span>
+            <h3 id="tryout-modal-title">{tryout.fullName || 'Peneira do clube'}</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="match-detail-modal">
+          <div className="profile-info-grid">
+            <div>
+              <small>Data e horario</small>
+              <strong>{formatDateLabel(tryout.date)} as {tryout.time || 'A definir'}</strong>
+            </div>
+            <div>
+              <small>Local</small>
+              <strong>{tryout.place || 'EA FC 26 | Clubs'}</strong>
+            </div>
+            <div>
+              <small>Status</small>
+              <strong>{tryout.status || 'Agendada'}</strong>
+            </div>
+            <div>
+              <small>Contato</small>
+              <strong>{tryout.contact || 'Nao informado'}</strong>
+            </div>
+          </div>
+
+          <div className="tryout-detail-list">
+            <strong>Jogadores da peneira</strong>
+            {players.length > 0 ? players.map((player) => (
+              <span key={`${player.name}-${player.position}`}>{player.name} | {player.position}</span>
+            )) : <span>{tryout.fullName || 'Jogadores a definir'} | {tryout.position || 'Geral'}</span>}
+          </div>
+
+          {tryout.requirements && <p className="modal-note"><strong>Requisitos:</strong> {tryout.requirements}</p>}
+          {tryout.notes && <p className="modal-note"><strong>Observacoes:</strong> {tryout.notes}</p>}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -4176,7 +4586,22 @@ function readAppSettings() {
   }
 }
 
-function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences }) {
+function SettingsPage({
+  user,
+  users,
+  setUsers,
+  setUserRole,
+  notify,
+  notificationPreferences,
+  saveNotificationPreferences,
+  players = [],
+  matches = [],
+  tryouts = [],
+  championships = [],
+  activities = [],
+  serverState,
+  refreshClubData,
+}) {
   const [settings, setSettings] = useState(readAppSettings);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
@@ -4333,12 +4758,40 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
         <SettingsItem title="Novas peneiras" checked={settings.notifications.newTryout} disabled={savingKey === 'notifications.newTryout'} onChange={() => updateSetting('notifications', 'newTryout')} />
       </SettingsGroup>
 
+      <SettingsGroup title="Atualizacoes da plataforma" description="Esses dados sao atualizados automaticamente quando alguem cadastra jogador, partida, peneira ou campeonato.">
+        <div className="settings-sync-grid">
+          <StatCard icon={Users} value={players.length} label="Jogadores" />
+          <StatCard icon={Flag} value={matches.length} label="Partidas" />
+          <StatCard icon={UserPlus} value={tryouts.length} label="Peneiras" />
+          <StatCard icon={Crown} value={championships.length} label="Campeonatos" />
+        </div>
+        <div className="panel settings-refresh-card">
+          <div>
+            <strong>Sincronizacao geral</strong>
+            <span>{serverState?.error ? 'Usando dados locais ate o backend voltar.' : 'Dados conectados e atualizados em tempo real curto.'}</span>
+            {activities[0] && <small>Ultima atividade: {formatDateTime(activities[0].createdAt)}</small>}
+          </div>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={async () => {
+              await refreshClubData?.({ silent: false });
+              notify('Dados da plataforma atualizados.');
+            }}
+          >
+            <RefreshCw size={16} />
+            Atualizar agora
+          </button>
+        </div>
+      </SettingsGroup>
+
       <SettingsGroup title="Preferencias de notificacoes">
         {!notificationPreferences && <div className="settings-warning">Preferencias ainda nao carregadas. Atualize novamente em alguns segundos.</div>}
         {notificationPreferences && (
           <>
             <SettingsItem title="Partidas agendadas" checked={notificationPreferences.matchCreated} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchCreated: !notificationPreferences.matchCreated })} />
             <SettingsItem title="Alteracoes de partidas" checked={notificationPreferences.matchUpdated} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchUpdated: !notificationPreferences.matchUpdated })} />
+            <SettingsItem title="Peneiras criadas" checked={notificationPreferences.tryoutCreated ?? true} onChange={() => saveNotificationPreferences({ ...notificationPreferences, tryoutCreated: !(notificationPreferences.tryoutCreated ?? true) })} />
             <SettingsItem title="Lembretes de 24 horas" checked={notificationPreferences.matchReminder24h} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchReminder24h: !notificationPreferences.matchReminder24h })} />
             <SettingsItem title="Lembretes de 1 hora" checked={notificationPreferences.matchReminder1h} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchReminder1h: !notificationPreferences.matchReminder1h })} />
             <SettingsItem title="Campeonatos" checked={notificationPreferences.championships} onChange={() => saveNotificationPreferences({ ...notificationPreferences, championships: !notificationPreferences.championships })} />
@@ -5282,6 +5735,7 @@ function championshipStatusLabel(status) {
 }
 
 function notificationCategory(type = '') {
+  if (type.includes('tryout')) return 'tryout';
   if (type.includes('championship')) return 'championship';
   if (type.includes('member')) return 'member';
   if (type.includes('statistics')) return 'statistics';
@@ -5290,6 +5744,7 @@ function notificationCategory(type = '') {
 }
 
 function notificationIcon(type = '') {
+  if (type.includes('tryout')) return UserPlus;
   if (type.includes('championship')) return Trophy;
   if (type.includes('member')) return UserPlus;
   if (type.includes('statistics')) return BarChart3;
