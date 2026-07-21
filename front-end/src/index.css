@@ -103,13 +103,34 @@ img {
   inset: 0;
   z-index: 9999;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-end;
+  justify-content: flex-start;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 45%, rgba(212, 162, 76, 0.08), transparent 18rem),
-    #05070a;
+  padding: clamp(28px, 6vw, 76px);
+  background: #05070a;
+  isolation: isolate;
   transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
+}
+
+.preloader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(5, 7, 10, 0.96), rgba(5, 7, 10, 0.58), rgba(5, 7, 10, 0.18)),
+    linear-gradient(0deg, rgba(5, 7, 10, 0.84), rgba(5, 7, 10, 0.18) 58%, rgba(5, 7, 10, 0.42));
+}
+
+.preloader-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.02);
 }
 
 .preloader.leaving {
@@ -118,33 +139,20 @@ img {
   filter: blur(2px);
 }
 
-.preloader-glow {
-  position: absolute;
-  left: 50%;
-  top: 46%;
-  width: 220px;
-  height: 220px;
-  border-radius: 999px;
-  background: rgba(212, 162, 76, 0.13);
-  filter: blur(70px);
-  transform: translate(-50%, -50%);
-  animation: minimalGlow 1.6s ease-in-out infinite;
-}
-
 .preloader-content {
   position: relative;
   z-index: 2;
-  width: min(280px, calc(100vw - 48px));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 22px 18px;
+  width: min(760px, 100%);
+  display: grid;
+  gap: 12px;
+  align-items: start;
+  text-align: left;
+  padding: 0;
 }
 
 .crest-stage {
   position: relative;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
   opacity: 0;
   animation: minimalLogoIn 0.55s ease forwards;
 }
@@ -152,30 +160,31 @@ img {
 .crest-stage img {
   position: relative;
   z-index: 1;
-  width: clamp(86px, 13vw, 118px);
+  width: clamp(82px, 9vw, 126px);
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.4));
   animation: minimalFloat 1.7s ease-in-out infinite;
 }
 
-.crest-glow {
-  position: absolute;
-  inset: 14%;
-  border-radius: 999px;
-  background: rgba(212, 162, 76, 0.18);
-  filter: blur(26px);
-}
-
 .preloader h1 {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--text);
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.22em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-family: "Bebas Neue", Inter, sans-serif;
+  font-size: 128px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 0.82;
   opacity: 0;
   animation: minimalFadeUp 0.55s ease 0.12s forwards;
+}
+
+.preloader-kicker {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: minimalFadeUp 0.55s ease 0.08s forwards;
 }
 
 .loading-dots {
@@ -188,7 +197,7 @@ img {
 
 .loading-bar {
   position: relative;
-  width: 100%;
+  width: min(320px, 100%);
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
@@ -212,11 +221,11 @@ img {
 }
 
 .preloader p {
-  margin: 14px 0 0;
-  color: var(--muted);
-  font-size: 0.65rem;
+  margin: -4px 0 6px;
+  color: var(--gold);
+  font-size: 0.78rem;
   font-weight: 900;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
   opacity: 0;
   animation: minimalFadeUp 0.55s ease 0.22s forwards;
@@ -4925,6 +4934,10 @@ section,
 }
 
 @media (max-width: 900px) {
+  .preloader h1 {
+    font-size: 96px;
+  }
+
   .landing {
     padding: 10px;
   }
@@ -5039,6 +5052,24 @@ section,
 }
 
 @media (max-width: 640px) {
+  .preloader {
+    padding: 34px 20px;
+  }
+
+  .preloader::after {
+    background:
+      linear-gradient(180deg, rgba(5, 7, 10, 0.2), rgba(5, 7, 10, 0.78) 48%, rgba(5, 7, 10, 0.97)),
+      linear-gradient(90deg, rgba(5, 7, 10, 0.94), rgba(5, 7, 10, 0.42));
+  }
+
+  .preloader-bg {
+    object-position: 76% center;
+  }
+
+  .preloader h1 {
+    font-size: 68px;
+  }
+
   .hero-actions,
   .button-row {
     flex-direction: column;

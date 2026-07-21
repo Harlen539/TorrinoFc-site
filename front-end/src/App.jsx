@@ -1581,24 +1581,22 @@ function Preloader() {
 
   return (
     <main className={`preloader ${isLeaving ? 'leaving' : ''}`}>
-      <div className="preloader-glow" aria-hidden="true" />
+      <img className="preloader-bg" src={banner} alt="" />
       <section className="preloader-content">
         <div className="crest-stage">
-          <div className="crest-glow" aria-hidden="true" />
           <img src={logo} alt="TorinnoFC" />
         </div>
 
+        <span className="preloader-kicker">EA SPORTS FC | PRO CLUBS</span>
         <h1>
-          Carregando
-          <span className="loading-dots">...</span>
+          TorinnoFC
         </h1>
+        <p>Digital</p>
 
         <div className="loading-bar" aria-hidden="true">
           <div className="bar-shine" />
           <div className="bar-fill" />
         </div>
-
-        <p>TorinnoFC</p>
       </section>
     </main>
   );
