@@ -5,6 +5,7 @@ import { serializePlayer } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
+import { ensurePlayersForExistingUsers, ensureStatsForExistingPlayers } from '../services/playerSyncService.js';
 
 export const playersRouter = Router();
 
@@ -56,6 +57,9 @@ function makeStatsData(body) {
 }
 
 playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
+  await ensurePlayersForExistingUsers(prisma);
+  await ensureStatsForExistingPlayers(prisma);
+
   const players = await prisma.playerProfile.findMany({
     where: {
       teamName: 'Torinno FC',

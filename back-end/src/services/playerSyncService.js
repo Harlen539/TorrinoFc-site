@@ -6,36 +6,51 @@ function normalizeShirtNumber(value) {
   return Math.min(number, 999);
 }
 
+function hasValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
 export async function ensurePlayerForUser(tx, profile, payload = {}) {
-  if (!profile || profile.role !== 'player') {
+  if (!profile || profile.accountStatus === 'removed') {
     return null;
   }
 
-  const playerData = {
+  const existing = await tx.playerProfile.findFirst({
+    where: { userId: profile.id },
+    include: { stats: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const baseData = {
     teamName: 'Torinno FC',
     fullName: sanitizeText(payload.name || payload.fullName || profile.name, { maxLength: 120 }),
     nickname: sanitizeText(payload.nickname || profile.nickname || profile.name, { maxLength: 80 }),
-    position: sanitizeText(payload.position, { maxLength: 60, fallback: 'Sem posicao' }),
-    shirtNumber: normalizeShirtNumber(payload.shirt || payload.shirtNumber),
     status: 'Ativo',
     avatarUrl: sanitizeNullableText(payload.avatarUrl || profile.avatarUrl, { maxLength: 1200 }),
     updatedAt: new Date(),
   };
 
-  const existing = await tx.playerProfile.findUnique({
-    where: { userId: profile.id },
-    include: { stats: true },
-  });
+  const createData = {
+    ...baseData,
+    position: sanitizeText(payload.position || profile.position, { maxLength: 60, fallback: 'Sem posicao' }),
+    shirtNumber: normalizeShirtNumber(payload.shirt || payload.shirtNumber || profile.shirt),
+  };
+
+  const updateData = {
+    ...baseData,
+    ...(hasValue(payload.position) ? { position: sanitizeText(payload.position, { maxLength: 60 }) } : {}),
+    ...(hasValue(payload.shirt || payload.shirtNumber) ? { shirtNumber: normalizeShirtNumber(payload.shirt || payload.shirtNumber) } : {}),
+  };
 
   const player = existing
     ? await tx.playerProfile.update({
       where: { id: existing.id },
-      data: playerData,
+      data: updateData,
       include: { stats: true },
     })
     : await tx.playerProfile.create({
       data: {
-        ...playerData,
+        ...createData,
         userId: profile.id,
         stats: { create: {} },
       },
@@ -51,4 +66,42 @@ export async function ensurePlayerForUser(tx, profile, payload = {}) {
   }
 
   return player;
+}
+
+export async function ensurePlayersForExistingUsers(prisma) {
+  const profiles = await prisma.userProfile.findMany({
+    where: {
+      accountStatus: { not: 'removed' },
+    },
+    include: { playerProfile: true },
+    orderBy: { joinedAt: 'asc' },
+  });
+
+  const synced = [];
+
+  for (const profile of profiles) {
+    if (profile.playerProfile) continue;
+
+    const player = await prisma.$transaction((tx) => ensurePlayerForUser(tx, profile));
+    if (player) synced.push(player);
+  }
+
+  return synced;
+}
+
+export async function ensureStatsForExistingPlayers(prisma) {
+  const players = await prisma.playerProfile.findMany({
+    where: {
+      teamName: 'Torinno FC',
+      status: { not: 'Removido' },
+      stats: null,
+    },
+    select: { id: true },
+  });
+
+  for (const player of players) {
+    await prisma.playerStats.create({ data: { playerId: player.id } }).catch(() => null);
+  }
+
+  return players.length;
 }
