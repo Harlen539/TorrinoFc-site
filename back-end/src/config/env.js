@@ -11,6 +11,8 @@ export const env = {
     .filter(Boolean),
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://torrino-fc-site.vercel.app',
+    'https://torrinosfc-site.vercel.app',
   ].filter((origin, index, items) => items.indexOf(origin) === index),
   adminApiKey: process.env.ADMIN_API_KEY || '',
   databaseUrl: process.env.DATABASE_URL || '',

@@ -1,6 +1,12 @@
 import { hasSupabaseConfig, supabase } from './supabaseClient.js';
 
-const API_BASE_URL = (import.meta.env.VITE_ADMIN_API_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
+const productionApiUrl = 'https://torrinofc-site.onrender.com';
+const localApiUrl = 'http://127.0.0.1:4000';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL
+  || import.meta.env.VITE_ADMIN_API_URL
+  || (import.meta.env.PROD ? productionApiUrl : localApiUrl)
+).replace(/\/$/, '');
 
 async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
   const headers = {
