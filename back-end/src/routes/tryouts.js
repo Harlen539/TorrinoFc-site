@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeTryout } from '../lib/serializers.js';
 import { requirePermission } from '../middleware/requireAdminApiKey.js';
+import { recordActivity } from '../services/activityService.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
 
 export const tryoutsRouter = Router();
@@ -75,6 +76,15 @@ tryoutsRouter.post('/api/tryouts', requirePermission('manageTryouts'), asyncRout
   await sendTryoutNotification(tryout.id).catch((error) => {
     console.error('[tryouts] Falha ao enviar notificacao da peneira:', error);
   });
+  await recordActivity({
+    type: 'tryout_created',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Peneira ${tryout.title} criada para ${tryout.tryoutDate.toISOString().slice(0, 10)}.`,
+    relatedEntityType: 'tryout',
+    relatedEntityId: tryout.id,
+    actionUrl: '/tryouts',
+  });
 
   response.status(201).json({ tryout: serializeTryout(tryout) });
 }));
@@ -90,6 +100,15 @@ tryoutsRouter.put('/api/tryouts/:id', requirePermission('manageTryouts'), asyncR
     where: { id: request.params.id },
     data: { ...makeTryoutData(request.body), updatedAt: new Date() },
   });
+  await recordActivity({
+    type: 'tryout_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Peneira ${tryout.title} atualizada.`,
+    relatedEntityType: 'tryout',
+    relatedEntityId: tryout.id,
+    actionUrl: '/tryouts',
+  });
 
   response.json({ tryout: serializeTryout(tryout) });
 }));
@@ -102,11 +121,30 @@ tryoutsRouter.patch('/api/tryouts/:id/status', requirePermission('manageTryouts'
       updatedAt: new Date(),
     },
   });
+  await recordActivity({
+    type: 'tryout_status_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Peneira ${tryout.title} marcada como ${tryout.status}.`,
+    relatedEntityType: 'tryout',
+    relatedEntityId: tryout.id,
+    actionUrl: '/tryouts',
+  });
 
   response.json({ tryout: serializeTryout(tryout) });
 }));
 
 tryoutsRouter.delete('/api/tryouts/:id', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
+  const tryout = await prisma.tryout.findUnique({ where: { id: request.params.id } });
   await prisma.tryout.delete({ where: { id: request.params.id } });
+  await recordActivity({
+    type: 'tryout_removed',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Peneira ${tryout?.title || 'agendada'} removida.`,
+    relatedEntityType: 'tryout',
+    relatedEntityId: request.params.id,
+    actionUrl: '/tryouts',
+  });
   response.status(204).send();
 }));

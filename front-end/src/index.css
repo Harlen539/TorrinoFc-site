@@ -1929,8 +1929,13 @@ section {
 }
 
 .performance-player-card .performance-actions .button,
-.performance-history-row .performance-actions .button {
+.performance-history-row .performance-actions .button,
+.admin-player-history .performance-actions .button {
   min-width: auto;
+}
+
+.admin-player-history .dashboard-panel-head {
+  align-items: flex-start;
 }
 
 .performance-history {

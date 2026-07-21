@@ -89,10 +89,29 @@ championshipsRouter.put('/api/championships/:id', requirePermission('manageChamp
     where: { id: request.params.id },
     data: { ...makeChampionshipData(request.body), updatedAt: new Date() },
   });
+  await recordActivity({
+    type: 'championship_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Campeonato ${championship.name} atualizado.`,
+    relatedEntityType: 'championship',
+    relatedEntityId: championship.id,
+    actionUrl: '/championships',
+  });
   response.json({ championship: serializeChampionship(championship) });
 }));
 
 championshipsRouter.delete('/api/championships/:id', requirePermission('manageChampionships'), asyncRoute(async (request, response) => {
+  const championship = await prisma.championship.findUnique({ where: { id: request.params.id } });
   await prisma.championship.delete({ where: { id: request.params.id } });
+  await recordActivity({
+    type: 'championship_removed',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `Campeonato ${championship?.name || 'do clube'} removido.`,
+    relatedEntityType: 'championship',
+    relatedEntityId: request.params.id,
+    actionUrl: '/championships',
+  });
   response.status(204).send();
 }));

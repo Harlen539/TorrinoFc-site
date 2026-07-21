@@ -120,6 +120,15 @@ matchesRouter.delete('/api/matches/:id', requirePermission('deleteMatch'), async
   await prisma.match.delete({ where: { id: request.params.id } });
   if (match) {
     await notifyMatchCancelled(match);
+    await recordActivity({
+      type: 'match_removed',
+      actorId: request.userProfile?.id || null,
+      actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+      message: `Partida contra ${match.awayTeam} removida.`,
+      relatedEntityType: 'match',
+      relatedEntityId: request.params.id,
+      actionUrl: '/matches',
+    });
   }
   response.status(204).send();
 }));

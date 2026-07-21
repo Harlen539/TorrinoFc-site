@@ -106,6 +106,15 @@ playersRouter.put('/api/players/:id', requirePermission('editPlayer'), asyncRout
     data: { ...makePlayerData(request.body), updatedAt: new Date() },
     include: { stats: true },
   });
+  await recordActivity({
+    type: 'player_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `${player.nickname} teve o perfil atualizado.`,
+    relatedEntityType: 'player',
+    relatedEntityId: player.id,
+    actionUrl: '/players',
+  });
 
   response.json({ player: serializePlayer(player) });
 }));
@@ -133,6 +142,21 @@ playersRouter.put('/api/players/:id/stats', requirePermission('editAnyPerformanc
   const updated = await prisma.playerProfile.findUnique({
     where: { id: request.params.id },
     include: { stats: true },
+  });
+  await recordActivity({
+    type: 'player_stats_updated',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || '',
+    message: `${updated?.nickname || player.nickname} teve estatisticas atualizadas.`,
+    relatedEntityType: 'player',
+    relatedEntityId: request.params.id,
+    actionUrl: '/players',
+    metadata: {
+      goals: stats.goals,
+      assists: stats.assists,
+      recoveries: stats.ballRecoveries,
+      rating: Number(stats.averageRating || 0),
+    },
   });
 
   response.json({ player: serializePlayer(updated) });

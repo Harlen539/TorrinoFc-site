@@ -45,6 +45,9 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
     nickname: sanitizeNullableText(request.body.nickname, { maxLength: 80 }),
     accountStatus: sanitizeText(request.body.accountStatus, { maxLength: 32, fallback: 'active' }),
     updatedAt: new Date(),
+    ...(request.body.avatarUrl || request.body.photo
+      ? { avatarUrl: sanitizeNullableText(request.body.avatarUrl || request.body.photo, { maxLength: 1200 }) }
+      : {}),
   };
   const requestedId = isUuid(request.body.id) ? request.body.id : undefined;
 
@@ -84,6 +87,16 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
       message: `${result.profile.nickname || result.profile.name} entrou para o clube.`,
       relatedEntityType: 'user',
       relatedEntityId: result.profile.id,
+      actionUrl: '/players',
+    });
+  } else if (request.body.profileUpdate) {
+    await recordActivity({
+      type: 'profile_updated',
+      actorId: result.profile.id,
+      actorName: result.profile.nickname || result.profile.name,
+      message: `${result.profile.nickname || result.profile.name} atualizou o perfil no elenco.`,
+      relatedEntityType: 'player',
+      relatedEntityId: result.player?.id || result.profile.playerProfile?.id || null,
       actionUrl: '/players',
     });
   }

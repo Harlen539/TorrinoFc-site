@@ -34,12 +34,16 @@ export async function ensurePlayerForUser(tx, profile, payload = {}) {
     ...baseData,
     position: sanitizeText(payload.position || profile.position, { maxLength: 60, fallback: 'Sem posicao' }),
     shirtNumber: normalizeShirtNumber(payload.shirt || payload.shirtNumber || profile.shirt),
+    photoUrl: sanitizeNullableText(payload.photoUrl || payload.photo, { maxLength: 1200 }),
+    bio: sanitizeNullableText(payload.bio, { maxLength: 700 }),
   };
 
   const updateData = {
     ...baseData,
     ...(hasValue(payload.position) ? { position: sanitizeText(payload.position, { maxLength: 60 }) } : {}),
     ...(hasValue(payload.shirt || payload.shirtNumber) ? { shirtNumber: normalizeShirtNumber(payload.shirt || payload.shirtNumber) } : {}),
+    ...(hasValue(payload.photoUrl || payload.photo) ? { photoUrl: sanitizeNullableText(payload.photoUrl || payload.photo, { maxLength: 1200 }) } : {}),
+    ...(hasValue(payload.bio) ? { bio: sanitizeNullableText(payload.bio, { maxLength: 700 }) } : {}),
   };
 
   const player = existing

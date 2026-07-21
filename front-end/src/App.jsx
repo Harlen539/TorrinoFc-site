@@ -56,6 +56,7 @@ import {
   fetchMySettings,
   fetchNotificationPreferences,
   fetchNotifications,
+  fetchPlayerPerformance,
   markAllNotificationsRead as apiMarkAllNotificationsRead,
   markNotificationRead as apiMarkNotificationRead,
   fetchPlayers,
@@ -513,10 +514,12 @@ function App() {
     if (failed) {
       const message = failed.reason?.message || 'Alguns dados ainda nao foram sincronizados pelo servidor.';
       setServerState({ loading: false, error: message });
+      await refreshExperienceData({ silent: true });
       return false;
     }
 
     setServerState({ loading: false, error: '' });
+    await refreshExperienceData({ silent: true });
     return true;
   };
 
@@ -601,6 +604,27 @@ function App() {
     };
   }, [session?.email]);
 
+  const refreshExperienceData = async ({ silent = false } = {}) => {
+    if (!session) {
+      setActivities([]);
+      setAchievements([]);
+      return false;
+    }
+
+    try {
+      const [nextActivities, nextAchievements] = await Promise.all([
+        fetchActivities({ limit: 18 }).catch(() => []),
+        fetchAchievements().catch(() => []),
+      ]);
+      setActivities(nextActivities);
+      setAchievements(nextAchievements);
+      return true;
+    } catch (error) {
+      if (!silent && import.meta.env.DEV) console.error('[experience]', error);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (!session) {
       setActivities([]);
@@ -608,26 +632,10 @@ function App() {
       return undefined;
     }
 
-    let active = true;
-    const loadExperienceData = async ({ silent = false } = {}) => {
-      try {
-        const [nextActivities, nextAchievements] = await Promise.all([
-          fetchActivities({ limit: 18 }).catch(() => []),
-          fetchAchievements().catch(() => []),
-        ]);
-        if (!active) return;
-        setActivities(nextActivities);
-        setAchievements(nextAchievements);
-      } catch (error) {
-        if (!silent && import.meta.env.DEV) console.error('[experience]', error);
-      }
-    };
-
-    loadExperienceData();
-    const timer = window.setInterval(() => loadExperienceData({ silent: true }), 12000);
+    refreshExperienceData();
+    const timer = window.setInterval(() => refreshExperienceData({ silent: true }), 12000);
 
     return () => {
-      active = false;
       window.clearInterval(timer);
     };
   }, [session?.id]);
@@ -1648,7 +1656,7 @@ function LogoutPage({ user, onLogout, onLogoutAllDevices, onSwitchAccount }) {
   );
 }
 
-function Dashboard({ user, players, matches, championships = [], setView, notify, activities = [] }) {
+function Dashboard({ user, players, matches, championships = [], setView, notify, activities = [], setSelectedPlayerId }) {
   const endedMatches = matches.filter((match) => match.status === 'Encerrada');
   const teamStats = getTeamStats(players, matches);
   const myPlayer = findPlayerForUser(user, players);
@@ -1680,7 +1688,7 @@ function Dashboard({ user, players, matches, championships = [], setView, notify
 
         <TeamInsights stats={teamStats} players={players} setView={setView} />
 
-        <ActivityFeed activities={activities} setView={setView} />
+        <ActivityFeed activities={activities} setView={setView} setSelectedPlayerId={setSelectedPlayerId} />
 
         <article className="panel dashboard-panel">
           <div className="dashboard-panel-head">
@@ -2007,7 +2015,7 @@ function TeamInsights({ stats, players, setView }) {
   );
 }
 
-function ActivityFeed({ activities, setView }) {
+function ActivityFeed({ activities, setView, setSelectedPlayerId }) {
   return (
     <article className="panel dashboard-panel activity-feed">
       <div className="dashboard-panel-head">
@@ -2026,6 +2034,11 @@ function ActivityFeed({ activities, setView }) {
             type="button"
             key={activity.id}
             onClick={() => {
+              if (activity.relatedEntityType === 'player' && activity.relatedEntityId) {
+                setSelectedPlayerId?.(activity.relatedEntityId);
+                setView('player-detail');
+                return;
+              }
               const target = String(activity.actionUrl || '').replace('/', '');
               if (target) setView(target);
             }}
@@ -2162,7 +2175,7 @@ function ApexChart({ options, className = '' }) {
   );
 }
 
-function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify }) {
+function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify, refreshClubData }) {
   const linkedPlayer = findPlayerForUser(user, players);
   const base = linkedPlayer || {
     id: null,
@@ -2292,7 +2305,7 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
           <button
             className="button primary"
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (!form.name.trim() || !form.nickname.trim()) {
                 notify('Preencha nome completo e apelido.');
                 return;
@@ -2309,30 +2322,38 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
                 nickname: form.nickname.trim(),
                 position: form.position,
                 shirt: form.shirt,
+                bio: form.bio.trim(),
                 photo: form.photo,
+                profileUpdate: true,
               };
-              setUser(nextUser);
-              setUsers(users.map((item) => (item.id === user.id ? { ...item, ...nextUser } : item)));
-              if (linkedPlayer) {
-                setPlayers(
-                  players.map((player) =>
-                    player.id === base.id
-                      ? {
-                          ...player,
-                          fullName: form.name.trim(),
-                          nickname: form.nickname.trim(),
-                          position: form.position,
-                          shirt: Number(form.shirt) || 0,
-                          avatar: getInitials(form.nickname.trim()),
-                          photo: form.photo,
-                          bio: form.bio.trim(),
-                        }
-                      : player,
-                  ),
-                );
+
+              try {
+                const synced = await apiSyncUser(nextUser);
+                const savedUser = normalizeUser({
+                  ...nextUser,
+                  id: synced.id,
+                  backendId: synced.id,
+                  role: synced.role,
+                  staffRole: synced.staffRole,
+                  playerId: synced.playerId,
+                  hasPlayerProfile: Boolean(synced.playerId),
+                });
+                setUser(publicUser(savedUser));
+                setUsers((items) => items.some((item) => item.email?.toLowerCase() === savedUser.email.toLowerCase())
+                  ? items.map((item) => (item.email?.toLowerCase() === savedUser.email.toLowerCase() ? savedUser : item))
+                  : [...items, savedUser]);
+                if (synced.player) {
+                  const normalizedPlayer = normalizePlayer(synced.player);
+                  setPlayers((items) => items.some((player) => player.id === normalizedPlayer.id)
+                    ? items.map((player) => (player.id === normalizedPlayer.id ? normalizedPlayer : player))
+                    : [normalizedPlayer, ...items]);
+                }
+                await refreshClubData?.({ silent: true });
+                setEditing(false);
+                notify('Perfil salvo e sincronizado com o elenco.');
+              } catch (error) {
+                notify(error.message || 'Nao foi possivel salvar o perfil no servidor.');
               }
-              setEditing(false);
-              notify('Perfil atualizado.');
             }}
           >
             <Save size={16} />
@@ -4428,8 +4449,36 @@ function UserRoleRow({ account, disabled, onChange }) {
   );
 }
 
-function PlayerDetail({ players, selectedPlayerId }) {
+function PlayerDetail({ players, selectedPlayerId, user, notify }) {
   const player = players.find((item) => item.id === selectedPlayerId) || players[0];
+  const [adminPerformance, setAdminPerformance] = useState({ loading: false, error: '', items: [] });
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    let active = true;
+    if (!isAdmin || !player?.id) {
+      setAdminPerformance({ loading: false, error: '', items: [] });
+      return () => {
+        active = false;
+      };
+    }
+
+    setAdminPerformance({ loading: true, error: '', items: [] });
+    fetchPlayerPerformance(player.id)
+      .then((payload) => {
+        if (!active) return;
+        setAdminPerformance({ loading: false, error: '', items: payload.performances || [] });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAdminPerformance({ loading: false, error: error.message || 'Nao foi possivel carregar o historico individual.', items: [] });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, player?.id]);
+
   if (!player) {
     return (
       <section>
@@ -4506,6 +4555,46 @@ function PlayerDetail({ players, selectedPlayerId }) {
           </div>
         </article>
       </div>
+      {isAdmin && (
+        <article className="panel dashboard-panel admin-player-history">
+          <div className="dashboard-panel-head">
+            <div>
+              <span>Admin</span>
+              <h3>Historico individual</h3>
+            </div>
+            <div className="performance-actions">
+              <button className="button secondary small" type="button" onClick={() => downloadPerformanceReport({ playerId: player.id, format: 'pdf' }).catch((error) => notify?.(error.message))}>
+                <BarChart3 size={15} />
+                PDF
+              </button>
+              <button className="button secondary small" type="button" onClick={() => downloadPerformanceReport({ playerId: player.id, format: 'csv' }).catch((error) => notify?.(error.message))}>
+                <BarChart3 size={15} />
+                CSV
+              </button>
+            </div>
+          </div>
+          {adminPerformance.loading && <div className="settings-warning">Carregando historico individual...</div>}
+          {adminPerformance.error && <div className="settings-warning">{adminPerformance.error}</div>}
+          {!adminPerformance.loading && !adminPerformance.error && adminPerformance.items.length === 0 && (
+            <EmptyState icon={Activity} title="Sem dados individuais." description="Quando este jogador registrar desempenho, o historico aparece aqui para administradores." />
+          )}
+          {adminPerformance.items.length > 0 && (
+            <div className="performance-history">
+              {adminPerformance.items.map((item) => (
+                <article className="performance-history-row admin-history-row" key={item.id}>
+                  <div>
+                    <strong>{item.match?.away || item.match?.awayTeam || 'Partida registrada'}</strong>
+                    <span>{item.match?.dateKey || item.match?.date || 'Data nao informada'} | Nota {item.rating || 0}</span>
+                    {item.notes && <small>{item.notes}</small>}
+                  </div>
+                  <small>G {item.goals || 0} | A {item.assists || 0}</small>
+                  <small>R {item.recoveries || item.ballRecoveries || 0}</small>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
+      )}
     </section>
   );
 }

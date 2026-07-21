@@ -174,6 +174,7 @@ async function createOrUpdatePerformance(request, response, playerId, performanc
 async function deletePerformance(request, response, playerId, performanceId) {
   const existing = await prisma.playerMatchPerformance.findFirst({
     where: { id: performanceId, playerId },
+    include: { match: true, player: true },
   });
 
   if (!existing) {
@@ -184,6 +185,17 @@ async function deletePerformance(request, response, playerId, performanceId) {
   await prisma.$transaction(async (tx) => {
     await tx.playerMatchPerformance.delete({ where: { id: performanceId } });
     await recalculatePlayerStats(tx, playerId);
+  });
+
+  await recordActivity({
+    type: 'performance_removed',
+    actorId: request.userProfile?.id || null,
+    actorName: request.userProfile?.nickname || request.userProfile?.name || existing.player?.nickname || '',
+    message: `${existing.player?.nickname || 'Jogador'} removeu desempenho contra ${existing.match?.awayTeam || 'adversario'}.`,
+    relatedEntityType: 'player',
+    relatedEntityId: playerId,
+    actionUrl: '/players',
+    metadata: { performanceId, matchId: existing.matchId },
   });
 
   response.status(204).send();
