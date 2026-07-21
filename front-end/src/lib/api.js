@@ -106,6 +106,10 @@ export function deleteTryout(id) {
   return request(`/api/tryouts/${id}`, { method: 'DELETE' });
 }
 
+export function registerAccount(payload) {
+  return request('/api/auth/register', { method: 'POST', body: payload });
+}
+
 export function createMatch(payload) {
   return request('/api/matches', { method: 'POST', body: payload }).then((data) => data.match);
 }

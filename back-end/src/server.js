@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { adminEmailRouter } from './routes/adminEmail.js';
 import { adminMatchesRouter } from './routes/adminMatches.js';
 import { adminTryoutsRouter } from './routes/adminTryouts.js';
+import { authRouter } from './routes/auth.js';
 import { championshipsRouter } from './routes/championships.js';
 import { clubExperienceRouter } from './routes/clubExperience.js';
 import { matchesRouter } from './routes/matches.js';
@@ -60,6 +61,7 @@ app.get('/health/db', async (_request, response) => {
 app.use(adminMatchesRouter);
 app.use(adminTryoutsRouter);
 app.use(adminEmailRouter);
+app.use(authRouter);
 app.use(matchesRouter);
 app.use(championshipsRouter);
 app.use(clubExperienceRouter);

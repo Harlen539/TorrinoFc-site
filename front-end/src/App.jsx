@@ -64,6 +64,7 @@ import {
   fetchRolePermissions,
   fetchTryouts,
   fetchUsers,
+  registerAccount as apiRegisterAccount,
   createPlayerPerformance as apiCreatePlayerPerformance,
   createMyPerformance as apiCreateMyPerformance,
   syncUser as apiSyncUser,
@@ -101,18 +102,6 @@ const localTryoutsKey = 'torinnofc-tryouts-cache';
 const localChampionshipsKey = 'torinnofc-championships-cache';
 const localMatchPerformancesKey = 'torinnofc-match-performance-cache';
 const localNotificationPreferencesKey = 'torinnofc-notification-preferences-cache';
-const captchaSiteKey = (
-  import.meta.env.VITE_RECAPTCHA_SITE_KEY
-  || import.meta.env.VITE_CAPTCHA_SITE_KEY
-  || import.meta.env.VITE_HCAPTCHA_SITE_KEY
-  || import.meta.env.VITE_TURNSTILE_SITE_KEY
-  || ''
-);
-const captchaProvider = String(
-  import.meta.env.VITE_RECAPTCHA_PROVIDER
-  || import.meta.env.VITE_CAPTCHA_PROVIDER
-  || (captchaSiteKey ? 'recaptcha' : '')
-).trim().toLowerCase();
 
 const defaultNotificationPreferences = {
   matchCreated: true,
@@ -1144,6 +1133,67 @@ function App() {
     return { ok: true };
   };
 
+  const completeRegisteredAccount = async (registered, form) => {
+    const userPayload = registered?.user || {};
+    const playerPayload = registered?.player || null;
+    const user = normalizeUser({
+      ...userPayload,
+      id: userPayload.id || registered?.authUser?.id || `u-${Date.now()}`,
+      backendId: userPayload.id || '',
+      name: userPayload.name || form.name.trim(),
+      nickname: userPayload.nickname || form.nickname.trim(),
+      email: normalizeEmail(form.email),
+      password: form.password,
+      role: userPayload.role || 'player',
+      staffRole: userPayload.staffRole || 'Jogador',
+      position: form.position,
+      shirt: form.shirt,
+      playerId: registered?.playerId || userPayload.playerId || playerPayload?.id || '',
+      hasPlayerProfile: Boolean(registered?.playerId || userPayload.playerId || playerPayload?.id),
+      localOnly: Boolean(registered?.localOnly),
+    });
+
+    let syncedPlayer = playerPayload ? normalizePlayer(playerPayload) : null;
+    if (!syncedPlayer) {
+      syncedPlayer = makePlayerFromUser(user);
+      user.playerId = syncedPlayer.id;
+      user.hasPlayerProfile = true;
+    }
+
+    setPlayers((items) => mergePlayers([syncedPlayer], items));
+    setUsers((items) => mergeUsers(items, [user]));
+    setSession(publicUser(user));
+    await refreshClubData({ silent: true });
+    setView('dashboard');
+    return { ok: true };
+  };
+
+  const completeServerRegistration = async (form) => {
+    const registered = await apiRegisterAccount({
+      name: form.name.trim(),
+      nickname: form.nickname.trim(),
+      email: normalizeEmail(form.email),
+      password: form.password,
+      position: form.position,
+      shirt: form.shirt,
+    });
+
+    if (hasSupabaseConfig && !registered?.localOnly) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizeEmail(form.email),
+        password: form.password,
+      });
+
+      if (!error && data.user) {
+        return completeSupabaseAuth(data.user);
+      }
+
+      if (import.meta.env.DEV && error) console.error('[auth/signin-after-register]', error);
+    }
+
+    return completeRegisteredAccount(registered, form);
+  };
+
   const handleAuth = async (form, isRegister) => {
     const email = normalizeEmail(form.email);
     if (!isValidEmail(email)) {
@@ -1152,22 +1202,24 @@ function App() {
     const existing = users.find((user) => user.email.toLowerCase() === email);
 
     if (isRegister) {
-      if (existing) {
+      if (existing && !hasSupabaseConfig && existing.password) {
         return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
       }
+
       if (hasSupabaseConfig) {
-        let captchaOptions = {};
         try {
-          captchaOptions = await getCaptchaOption('signup');
-        } catch (captchaError) {
-          return { error: authErrorMessage(captchaError, 'Nao foi possivel confirmar a verificacao anti-bot.') };
+          return await completeServerRegistration(form);
+        } catch (serverRegisterError) {
+          if (import.meta.env.DEV) console.error('[auth/server-register]', serverRegisterError);
+          if (/cadastrado|registered|already|exists/i.test(String(serverRegisterError?.message || ''))) {
+            return { error: authErrorMessage(serverRegisterError, 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.') };
+          }
         }
 
         const { data, error } = await supabase.auth.signUp({
           email,
           password: form.password,
           options: {
-            ...captchaOptions,
             emailRedirectTo: window.location.origin,
             data: {
               name: form.name.trim(),
@@ -1180,52 +1232,13 @@ function App() {
 
         if (error) {
           if (import.meta.env.DEV) console.error('[auth/signup]', error);
-          return { error: authErrorMessage(error, 'Nao foi possivel criar a conta. Verifique o e-mail e tente novamente.') };
-        }
-
-        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
-          return { error: 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.' };
-        }
-
-        if (data.user) {
-          const metadata = data.user.user_metadata || {};
-          const user = normalizeUser({
-            id: data.user.id,
-            name: metadata.name || form.name.trim(),
-            nickname: metadata.nickname || form.nickname.trim(),
-            email,
-            password: form.password,
-            role: 'player',
-            staffRole: 'Jogador',
-            position: metadata.position || form.position,
-            shirt: metadata.shirt || form.shirt,
-          });
-
-          let syncedPlayer = null;
-          try {
-            const synced = await apiSyncUser(user);
-            user.id = synced.id;
-            user.backendId = synced.id;
-            user.role = synced.role;
-            user.staffRole = synced.staffRole;
-            user.playerId = synced.playerId;
-            user.hasPlayerProfile = Boolean(synced.playerId);
-            if (synced.player) {
-              syncedPlayer = normalizePlayer(synced.player);
-            }
-          } catch {
-            user.localOnly = true;
-            syncedPlayer = makePlayerFromUser(user);
-            user.playerId = syncedPlayer.id;
-            user.hasPlayerProfile = true;
+          if (/registered|already|exists/i.test(String(error.message || ''))) {
+            return { error: authErrorMessage(error, 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.') };
           }
-
-          setPlayers((items) => mergePlayers([syncedPlayer || makePlayerFromUser(user)], items));
-          setUsers((items) => mergeUsers(items, [user]));
-          setSession(publicUser(user));
-          await refreshClubData({ silent: true });
-          setView('dashboard');
-          return { ok: true };
+        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
+          return { error: 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.' };
+        } else if (data.user) {
+          return completeSupabaseAuth(data.user);
         }
       }
 
@@ -1273,17 +1286,9 @@ function App() {
     }
 
     if (hasSupabaseConfig) {
-      let captchaOptions = {};
-      try {
-        captchaOptions = await getCaptchaOption('signin');
-      } catch (captchaError) {
-        return { error: authErrorMessage(captchaError, 'Nao foi possivel confirmar a verificacao anti-bot.') };
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password: form.password,
-        ...(Object.keys(captchaOptions).length ? { options: captchaOptions } : {}),
       });
 
       if (!error && data.user) {
@@ -1291,7 +1296,7 @@ function App() {
       }
 
       if (import.meta.env.DEV && error) console.error('[auth/signin]', error);
-      if (existing?.localOnly && existing.password && existing.password === form.password) {
+      if (existing?.password && existing.password === form.password) {
         setSession(publicUser(existing));
         setView('dashboard');
         return { ok: true };
@@ -1756,10 +1761,8 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
 
     setResettingPassword(true);
     try {
-      const captchaOptions = await getCaptchaOption('password_reset');
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin,
-        ...captchaOptions,
       });
       if (resetError) {
         setError(authErrorMessage(resetError, 'Nao foi possivel enviar o link de recuperacao.'));
@@ -6127,161 +6130,11 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 }
 
-function loadScriptOnce(id, src) {
-  if (typeof window === 'undefined') return Promise.resolve();
-
-  const existing = document.getElementById(id);
-  if (existing?.dataset.loaded === 'true') return Promise.resolve();
-  if (existing?.dataset.loading === 'true') {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener('load', resolve, { once: true });
-      existing.addEventListener('error', reject, { once: true });
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.id = id;
-    script.src = src;
-    script.async = true;
-    script.defer = true;
-    script.dataset.loading = 'true';
-    script.onload = () => {
-      script.dataset.loaded = 'true';
-      script.dataset.loading = 'false';
-      resolve();
-    };
-    script.onerror = () => reject(new Error('Nao foi possivel carregar a verificacao anti-bot.'));
-    document.head.appendChild(script);
-  });
-}
-
-function captchaActionName(action) {
-  return String(action || 'auth').replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 32) || 'auth';
-}
-
-function getCaptchaProvider() {
-  if (!captchaSiteKey) return '';
-  if (captchaProvider.includes('turnstile')) return 'turnstile';
-  if (captchaProvider.includes('hcaptcha')) return 'hcaptcha';
-  return 'recaptcha';
-}
-
-function getHiddenCaptchaContainer(id) {
-  let container = document.getElementById(id);
-  if (container) return container;
-
-  container = document.createElement('div');
-  container.id = id;
-  container.style.position = 'fixed';
-  container.style.left = '-9999px';
-  container.style.bottom = '0';
-  container.style.width = '1px';
-  container.style.height = '1px';
-  document.body.appendChild(container);
-  return container;
-}
-
-function withCaptchaTimeout(promise) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      window.setTimeout(() => reject(new Error('A verificacao anti-bot demorou para responder.')), 12000);
-    }),
-  ]);
-}
-
-async function getRecaptchaToken(action) {
-  await loadScriptOnce('torinnofc-recaptcha', `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(captchaSiteKey)}`);
-  const grecaptcha = window.grecaptcha;
-  if (!grecaptcha?.execute) {
-    throw new Error('A verificacao anti-bot nao carregou.');
-  }
-
-  await new Promise((resolve) => grecaptcha.ready(resolve));
-  return grecaptcha.execute(captchaSiteKey, { action: captchaActionName(action) });
-}
-
-async function getHCaptchaToken() {
-  await loadScriptOnce('torinnofc-hcaptcha', 'https://js.hcaptcha.com/1/api.js?render=explicit');
-  const hcaptcha = window.hcaptcha;
-  if (!hcaptcha?.render || !hcaptcha?.execute) {
-    throw new Error('A verificacao anti-bot nao carregou.');
-  }
-
-  const container = getHiddenCaptchaContainer('torinnofc-hcaptcha-container');
-  container.innerHTML = '';
-  const widgetId = hcaptcha.render(container, {
-    sitekey: captchaSiteKey,
-    size: 'invisible',
-  });
-  const response = await hcaptcha.execute(widgetId, { async: true });
-  hcaptcha.reset(widgetId);
-  return typeof response === 'string' ? response : response?.response || response?.token || '';
-}
-
-async function getTurnstileToken(action) {
-  await loadScriptOnce('torinnofc-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit');
-  const turnstile = window.turnstile;
-  if (!turnstile?.render || !turnstile?.execute) {
-    throw new Error('A verificacao anti-bot nao carregou.');
-  }
-
-  const container = getHiddenCaptchaContainer('torinnofc-turnstile-container');
-  container.innerHTML = '';
-  return new Promise((resolve, reject) => {
-    const widgetId = turnstile.render(container, {
-      sitekey: captchaSiteKey,
-      size: 'invisible',
-      action: captchaActionName(action),
-      callback: (token) => {
-        turnstile.remove(widgetId);
-        resolve(token);
-      },
-      'error-callback': () => {
-        turnstile.remove(widgetId);
-        reject(new Error('A verificacao anti-bot falhou.'));
-      },
-      'expired-callback': () => {
-        turnstile.remove(widgetId);
-        reject(new Error('A verificacao anti-bot expirou.'));
-      },
-    });
-    turnstile.execute(widgetId);
-  });
-}
-
-async function getCaptchaToken(action) {
-  if (!captchaSiteKey || typeof window === 'undefined') return '';
-
-  const provider = getCaptchaProvider();
-  const token = await withCaptchaTimeout(
-    provider === 'turnstile'
-      ? getTurnstileToken(action)
-      : provider === 'hcaptcha'
-        ? getHCaptchaToken()
-        : getRecaptchaToken(action),
-  );
-
-  if (!token) {
-    throw new Error('Nao foi possivel confirmar a verificacao anti-bot.');
-  }
-  return token;
-}
-
-async function getCaptchaOption(action) {
-  const captchaToken = await getCaptchaToken(action);
-  return captchaToken ? { captchaToken } : {};
-}
-
 function authErrorMessage(error, fallback) {
   const message = String(error?.message || '');
   const code = String(error?.code || error?.name || '');
   const raw = `${code} ${message}`.toLowerCase();
 
-  if (raw.includes('captcha')) {
-    return 'A verificacao anti-bot falhou. Atualize a pagina e tente novamente.';
-  }
   if (raw.includes('already') || raw.includes('exists') || raw.includes('registered')) {
     return 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.';
   }
