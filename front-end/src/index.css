@@ -1897,6 +1897,41 @@ section {
   min-width: 190px;
 }
 
+.match-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.match-card-stats,
+.match-detail-stats {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.match-stats-recorder {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(212, 162, 76, 0.16);
+  border-radius: 12px;
+  background: rgba(212, 162, 76, 0.06);
+}
+
+.match-stats-recorder .field {
+  margin: 0;
+}
+
+.match-stats-recorder textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.match-stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
 .performance-player-card .performance-actions .button,
 .performance-history-row .performance-actions .button,
 .admin-player-history .performance-actions .button {

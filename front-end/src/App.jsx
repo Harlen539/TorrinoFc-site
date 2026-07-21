@@ -64,6 +64,7 @@ import {
   fetchRolePermissions,
   fetchTryouts,
   fetchUsers,
+  createPlayerPerformance as apiCreatePlayerPerformance,
   createMyPerformance as apiCreateMyPerformance,
   syncUser as apiSyncUser,
   updateChampionship as apiUpdateChampionship,
@@ -98,6 +99,7 @@ const localPlayersKey = 'torinnofc-players-cache';
 const localMatchesKey = 'torinnofc-matches-cache';
 const localTryoutsKey = 'torinnofc-tryouts-cache';
 const localChampionshipsKey = 'torinnofc-championships-cache';
+const localMatchPerformancesKey = 'torinnofc-match-performance-cache';
 const localNotificationPreferencesKey = 'torinnofc-notification-preferences-cache';
 
 const defaultNotificationPreferences = {
@@ -507,6 +509,7 @@ function normalizeTryout(tryout) {
 function normalizeUser(user) {
   return {
     id: user.id || `u-${Date.now()}`,
+    backendId: user.backendId || user.backend_id || '',
     name: user.name || user.nickname || 'Jogador TorinnoFC',
     nickname: user.nickname || user.name || 'Jogador',
     email: user.email || '',
@@ -518,6 +521,7 @@ function normalizeUser(user) {
     playerId: user.playerId || user.player?.id || '',
     hasPlayerProfile: user.hasPlayerProfile || Boolean(user.playerId || user.player?.id),
     photo: user.photo || '',
+    localOnly: Boolean(user.localOnly),
   };
 }
 
@@ -565,6 +569,7 @@ function makePlayerFromUser(user) {
     avatar: getInitials(normalized.nickname || normalized.name),
     photo: normalized.photo,
     status: 'Ativo',
+    localOnly: true,
     stats: {},
   });
 }
@@ -612,6 +617,72 @@ function mergeById(normalizer, ...groups) {
   }
 
   return [...map.values()];
+}
+
+function readLocalMatchPerformances() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(localMatchPerformancesKey) || '{}');
+    return saved && typeof saved === 'object' ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalMatchPerformance(matchId, playerId, performance) {
+  const entries = readLocalMatchPerformances();
+  const key = `${matchId}:${playerId}`;
+  const previous = entries[key] || null;
+  entries[key] = performance;
+  localStorage.setItem(localMatchPerformancesKey, JSON.stringify(entries));
+  return previous;
+}
+
+function getScoreOutcome(score = '') {
+  const [homeScore, awayScore] = String(score || '')
+    .split('x')
+    .map((value) => Number(value.trim()));
+
+  if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore)) return '';
+  if (homeScore > awayScore) return 'win';
+  if (homeScore < awayScore) return 'loss';
+  return 'draw';
+}
+
+function applyPerformanceDelta(player, nextPerformance, previousPerformance = null) {
+  const stats = player.stats || {};
+  const numeric = (value) => Number(value) || 0;
+  const outcomeDelta = (outcome) => (
+    (nextPerformance.outcome === outcome ? 1 : 0) - (previousPerformance?.outcome === outcome ? 1 : 0)
+  );
+  const nextRating = numeric(nextPerformance.rating);
+  const previousRating = numeric(previousPerformance?.rating);
+  const previousMatches = numeric(stats.matches);
+  const matchDelta = previousPerformance ? 0 : 1;
+  const matches = Math.max(previousMatches + matchDelta, previousPerformance ? 1 : matchDelta);
+  const ratingBase = previousPerformance
+    ? (numeric(stats.rating) * Math.max(previousMatches, 1)) - previousRating + nextRating
+    : (numeric(stats.rating) * previousMatches) + nextRating;
+
+  return normalizePlayer({
+    ...player,
+    stats: {
+      ...stats,
+      goals: numeric(stats.goals) + numeric(nextPerformance.goals) - numeric(previousPerformance?.goals),
+      assists: numeric(stats.assists) + numeric(nextPerformance.assists) - numeric(previousPerformance?.assists),
+      recoveries: numeric(stats.recoveries) + numeric(nextPerformance.recoveries) - numeric(previousPerformance?.recoveries),
+      shots: numeric(stats.shots) + numeric(nextPerformance.shots) - numeric(previousPerformance?.shots),
+      passes: numeric(stats.passes) + numeric(nextPerformance.passes) - numeric(previousPerformance?.passes),
+      tackles: numeric(stats.tackles) + numeric(nextPerformance.tackles) - numeric(previousPerformance?.tackles),
+      interceptions: numeric(stats.interceptions) + numeric(nextPerformance.interceptions) - numeric(previousPerformance?.interceptions),
+      yellow: numeric(stats.yellow) + numeric(nextPerformance.yellow) - numeric(previousPerformance?.yellow),
+      red: numeric(stats.red) + numeric(nextPerformance.red) - numeric(previousPerformance?.red),
+      matches,
+      wins: numeric(stats.wins) + outcomeDelta('win'),
+      draws: numeric(stats.draws) + outcomeDelta('draw'),
+      losses: numeric(stats.losses) + outcomeDelta('loss'),
+      rating: matches ? Math.round((ratingBase / matches) * 10) / 10 : 0,
+    },
+  });
 }
 
 function mergeNotifications(...groups) {
@@ -849,6 +920,63 @@ function App() {
   }, [session?.id, session?.email, players]);
 
   useEffect(() => {
+    if (!session?.email) return undefined;
+
+    let active = true;
+    let syncing = false;
+
+    const syncCurrentUserAsPlayer = async () => {
+      if (syncing) return;
+      const currentUser = users.find((item) => (
+        item.id === session.id
+        || item.email?.toLowerCase() === session.email?.toLowerCase()
+      )) || session;
+      const currentPlayer = findPlayerForUser(currentUser, players);
+      const needsSync = !currentUser.backendId
+        || currentUser.localOnly
+        || !currentPlayer
+        || String(currentPlayer.id).startsWith('local-')
+        || currentPlayer.localOnly;
+
+      if (!needsSync) return;
+
+      syncing = true;
+      try {
+        const synced = await apiSyncUser(currentUser);
+        if (!active) return;
+        const syncedUser = normalizeUser({
+          ...currentUser,
+          id: synced.id,
+          backendId: synced.id,
+          role: synced.role,
+          staffRole: synced.staffRole,
+          playerId: synced.playerId,
+          hasPlayerProfile: Boolean(synced.playerId),
+          localOnly: false,
+        });
+        setUsers((items) => mergeUsers(items, [syncedUser]));
+        setSession(publicUser(syncedUser));
+        if (synced.player) {
+          setPlayers((items) => mergePlayers([normalizePlayer(synced.player)], items));
+        }
+        await refreshClubData({ silent: true });
+      } catch {
+        // Backend/banco pode estar indisponivel; o timer tenta novamente.
+      } finally {
+        syncing = false;
+      }
+    };
+
+    syncCurrentUserAsPlayer();
+    const timer = window.setInterval(syncCurrentUserAsPlayer, 15000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.id, session?.email, users, players]);
+
+  useEffect(() => {
     if (session) {
       localStorage.setItem('torinnofc-session', JSON.stringify(session));
     } else {
@@ -985,6 +1113,7 @@ function App() {
       }
     } catch {
       // Mantem a sessao do Supabase ativa mesmo se o perfil local ainda nao sincronizar.
+      user.localOnly = true;
     }
 
     if (!syncedPlayer) {
@@ -1060,6 +1189,7 @@ function App() {
               syncedPlayer = normalizePlayer(synced.player);
             }
           } catch {
+            user.localOnly = true;
             syncedPlayer = makePlayerFromUser(user);
             user.playerId = syncedPlayer.id;
             user.hasPlayerProfile = true;
@@ -1103,6 +1233,7 @@ function App() {
           syncedPlayer = normalizePlayer(synced.player);
         }
       } catch {
+        userWithPlayer.localOnly = true;
         syncedPlayer = makePlayerFromUser(userWithPlayer);
         userWithPlayer.playerId = syncedPlayer.id;
         userWithPlayer.hasPlayerProfile = true;
@@ -3444,20 +3575,155 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
   );
 }
 
-function Matches({ matches, saveMatch, notify }) {
+function MatchStatsRecorder({ match, players = [], setPlayers, notify, refreshClubData }) {
+  const normalizedMatch = normalizeMatchEvent(match);
+  const [playerId, setPlayerId] = useState(players[0]?.id || '');
+  const [form, setForm] = useState({
+    goals: 0,
+    assists: 0,
+    recoveries: 0,
+    shots: 0,
+    passes: 0,
+    tackles: 0,
+    interceptions: 0,
+    yellow: 0,
+    red: 0,
+    minutes: 90,
+    rating: 0,
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!playerId && players[0]?.id) {
+      setPlayerId(players[0].id);
+    }
+  }, [playerId, players]);
+
+  const updateNumber = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value === '' ? '' : Number(value) }));
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!playerId) {
+      notify('Selecione um jogador para registrar estatisticas.');
+      return;
+    }
+    if (normalizedMatch.status !== 'Encerrada') {
+      notify('Finalize a partida antes de registrar as estatisticas.');
+      return;
+    }
+    if (!Number.isFinite(Number(form.rating)) || Number(form.rating) < 0 || Number(form.rating) > 10) {
+      notify('A nota deve ficar entre 0 e 10.');
+      return;
+    }
+
+    const payload = {
+      ...form,
+      matchId: normalizedMatch.id,
+      rating: Number(form.rating) || 0,
+      outcome: getScoreOutcome(normalizedMatch.score),
+    };
+
+    setSaving(true);
+    try {
+      const result = await apiCreatePlayerPerformance(playerId, payload);
+      if (result.player) {
+        setPlayers?.((items) => items.map((player) => (player.id === playerId ? normalizePlayer(result.player) : player)));
+      }
+      await refreshClubData?.({ silent: true });
+      notify('Estatisticas da partida salvas e painel atualizado.');
+    } catch {
+      const previous = writeLocalMatchPerformance(normalizedMatch.id, playerId, payload);
+      setPlayers?.((items) => items.map((player) => (
+        player.id === playerId ? applyPerformanceDelta(player, payload, previous) : player
+      )));
+      notify('Estatisticas salvas localmente. O banco sincroniza quando voltar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (normalizedMatch.status !== 'Encerrada') {
+    return (
+      <div className="settings-warning">Finalize a partida para liberar o registro de estatisticas.</div>
+    );
+  }
+
+  return (
+    <form className="match-stats-recorder" onSubmit={submit}>
+      <div className="form-grid">
+        <label className="field">
+          <span>Jogador</span>
+          <select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>
+            <option value="">Selecione</option>
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>#{player.shirt} {player.nickname}</option>
+            ))}
+          </select>
+        </label>
+        <Field label="Nota" type="number" value={form.rating} onChange={(rating) => updateNumber('rating', rating)} />
+      </div>
+      <div className="form-grid three match-stats-grid">
+        <Field label="Gols" type="number" value={form.goals} onChange={(goals) => updateNumber('goals', goals)} />
+        <Field label="Assist." type="number" value={form.assists} onChange={(assists) => updateNumber('assists', assists)} />
+        <Field label="Roubadas" type="number" value={form.recoveries} onChange={(recoveries) => updateNumber('recoveries', recoveries)} />
+        <Field label="Finaliz." type="number" value={form.shots} onChange={(shots) => updateNumber('shots', shots)} />
+        <Field label="Passes" type="number" value={form.passes} onChange={(passes) => updateNumber('passes', passes)} />
+        <Field label="Desarmes" type="number" value={form.tackles} onChange={(tackles) => updateNumber('tackles', tackles)} />
+        <Field label="Intercept." type="number" value={form.interceptions} onChange={(interceptions) => updateNumber('interceptions', interceptions)} />
+        <Field label="Amarelos" type="number" value={form.yellow} onChange={(yellow) => updateNumber('yellow', yellow)} />
+        <Field label="Vermelhos" type="number" value={form.red} onChange={(red) => updateNumber('red', red)} />
+        <Field label="Minutos" type="number" value={form.minutes} onChange={(minutes) => updateNumber('minutes', minutes)} />
+      </div>
+      <label className="field">
+        <span>Observacoes</span>
+        <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+      </label>
+      <button className="button primary" type="submit" disabled={saving || players.length === 0}>
+        <Save size={16} />
+        {saving ? 'Salvando...' : 'Salvar estatisticas'}
+      </button>
+    </form>
+  );
+}
+
+function Matches({ user, players, setPlayers, matches, saveMatch, notify, refreshClubData }) {
   return (
     <section>
       <SectionHeader eyebrow="Agenda competitiva" title="Partidas" />
       <div className="match-list">
         {matches.map((match) => (
-          <MatchCard key={match.id} match={match} saveMatch={saveMatch} notify={notify} />
+          <MatchCard
+            key={match.id}
+            user={user}
+            match={match}
+            players={players}
+            setPlayers={setPlayers}
+            saveMatch={saveMatch}
+            notify={notify}
+            refreshClubData={refreshClubData}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], championships = [], notify, setView }) {
+function Calendar({
+  user,
+  players,
+  setPlayers,
+  matches,
+  saveMatch,
+  removeMatch,
+  tryouts = [],
+  championships = [],
+  notify,
+  setView,
+  refreshClubData,
+}) {
   const [monthDate, setMonthDate] = useState(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(toDateKey(new Date()));
   const [filter, setFilter] = useState('Todos');
@@ -3678,7 +3944,11 @@ function Calendar({ user, matches, saveMatch, removeMatch, tryouts = [], champio
           modal={modal}
           championships={championships}
           isAdmin={isAdmin}
+          players={players}
+          setPlayers={setPlayers}
           saving={saving}
+          notify={notify}
+          refreshClubData={refreshClubData}
           onClose={() => setModal(null)}
           onSave={handleSaveMatch}
           onEdit={(match) => setModal({ type: 'edit-match', dateKey: match.dateKey, match })}
@@ -3740,7 +4010,20 @@ function TryoutDetailModal({ tryout, onClose }) {
   );
 }
 
-function MatchModal({ modal, championships, isAdmin, saving, onClose, onSave, onEdit, onDelete }) {
+function MatchModal({
+  modal,
+  championships,
+  isAdmin,
+  players = [],
+  setPlayers,
+  saving,
+  notify,
+  refreshClubData,
+  onClose,
+  onSave,
+  onEdit,
+  onDelete,
+}) {
   const isDetails = modal.type === 'details';
   const match = modal.match || {};
   const [form, setForm] = useState(() => ({
@@ -3827,6 +4110,17 @@ function MatchModal({ modal, championships, isAdmin, saving, onClose, onSave, on
               </div>
             </div>
             {match.observations && <p className="modal-note">{match.observations}</p>}
+            {isAdmin && match.status === 'Encerrada' && (
+              <div className="match-detail-stats">
+                <MatchStatsRecorder
+                  match={match}
+                  players={players}
+                  setPlayers={setPlayers}
+                  notify={notify}
+                  refreshClubData={refreshClubData}
+                />
+              </div>
+            )}
             <div className="modal-actions">
               {match.whatsappUrl && (
                 <button className="button primary" type="button" onClick={() => window.open(match.whatsappUrl, '_blank', 'noopener,noreferrer')}>
@@ -5178,7 +5472,7 @@ function useCountdown(match) {
   return label;
 }
 
-function Matchday({ user, players, matches, saveMatch, setView, notify, refreshClubData }) {
+function Matchday({ user, players, setPlayers, matches, saveMatch, setView, notify, refreshClubData }) {
   const fallbackMatch = matches.find((match) => match.status === 'Em andamento')
     || matches.find((match) => match.status === 'Agendada')
     || matches[0];
@@ -5437,7 +5731,16 @@ function Matchday({ user, players, matches, saveMatch, setView, notify, refreshC
             <div><span>Final</span><h3>Resumo da partida</h3></div>
             <button className="action-link" type="button" onClick={() => setView('performance')}>Registrar desempenho</button>
           </div>
-          <p className="settings-warning">{match.observations || 'Resultado final salvo. Use Meu Desempenho para registrar as estatisticas individuais.'}</p>
+          <p className="settings-warning">{match.observations || 'Resultado final salvo. Registre abaixo os dados reais da partida para atualizar o painel.'}</p>
+          {isAdmin && (
+            <MatchStatsRecorder
+              match={match}
+              players={players}
+              setPlayers={setPlayers}
+              notify={notify}
+              refreshClubData={refreshClubData}
+            />
+          )}
         </div>
       )}
     </section>
@@ -5466,8 +5769,10 @@ function LineupList({ title, players, captainId }) {
   );
 }
 
-function MatchCard({ match, saveMatch, notify }) {
+function MatchCard({ user, match, players, setPlayers, saveMatch, notify, refreshClubData }) {
   const normalized = normalizeMatchEvent(match);
+  const [showStats, setShowStats] = useState(false);
+  const isAdmin = user?.role === 'admin';
   const nextStatus = async () => {
     const currentIndex = statusFlow.indexOf(normalized.status);
     const status = statusFlow[(currentIndex + 1) % statusFlow.length];
@@ -5500,9 +5805,32 @@ function MatchCard({ match, saveMatch, notify }) {
         </small>
       </div>
       <div className="score">{normalized.score}</div>
-      <button className={`status ${normalized.status === 'Em andamento' ? 'live' : ''}`} type="button" onClick={nextStatus}>
-        {normalized.status}
-      </button>
+      <div className="match-card-actions">
+        <button className={`status ${normalized.status === 'Em andamento' ? 'live' : ''}`} type="button" onClick={nextStatus}>
+          {normalized.status}
+        </button>
+        {isAdmin && normalized.status === 'Encerrada' && (
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={() => setShowStats((current) => !current)}
+          >
+            <BarChart3 size={14} />
+            Dados
+          </button>
+        )}
+      </div>
+      {showStats && isAdmin && normalized.status === 'Encerrada' && (
+        <div className="match-card-stats">
+          <MatchStatsRecorder
+            match={normalized}
+            players={players}
+            setPlayers={setPlayers}
+            notify={notify}
+            refreshClubData={refreshClubData}
+          />
+        </div>
+      )}
     </article>
   );
 }
