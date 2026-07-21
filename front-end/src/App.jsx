@@ -35,6 +35,13 @@ import {
 } from 'lucide-react';
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient.js';
 import {
+  getAuthSession,
+  signInWithPassword,
+  signOut as signOutSupabase,
+  subscribeToAuthChanges,
+} from './features/auth/authService.js';
+import { prepareOpponentLogo } from './features/matches/image.js';
+import {
   createChampionship as apiCreateChampionship,
   createMatch as apiCreateMatch,
   createPlayer as apiCreatePlayer,
@@ -379,24 +386,6 @@ function readSavedPlayers() {
   }
 }
 
-function readSavedMatches() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(localMatchesKey) || '[]');
-    return Array.isArray(saved) ? saved.map(normalizeMatchEvent) : initialMatches.map(normalizeMatchEvent);
-  } catch {
-    return initialMatches.map(normalizeMatchEvent);
-  }
-}
-
-function readSavedTryouts() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(localTryoutsKey) || '[]');
-    return Array.isArray(saved) ? saved.map(normalizeTryout) : initialTryouts;
-  } catch {
-    return initialTryouts;
-  }
-}
-
 function readSavedNotificationPreferences() {
   try {
     return {
@@ -423,27 +412,6 @@ function readSavedChampionships() {
     return Array.isArray(saved) ? saved.map(normalizeChampionshipItem) : [];
   } catch {
     return [];
-  }
-}
-
-function readSavedSession(users = readSavedUsers()) {
-  try {
-    const saved = localStorage.getItem('torinnofc-session');
-    if (!saved) {
-      return null;
-    }
-
-    const parsed = JSON.parse(saved);
-    if (!parsed || typeof parsed !== 'object') {
-      localStorage.removeItem('torinnofc-session');
-      return null;
-    }
-
-    const current = users.find((user) => user.id === parsed.id || user.email?.toLowerCase() === parsed.email?.toLowerCase());
-    return current ? publicUser(current) : publicUser(parsed);
-  } catch {
-    localStorage.removeItem('torinnofc-session');
-    return null;
   }
 }
 
@@ -514,7 +482,6 @@ function normalizeUser(user) {
     name: user.name || user.nickname || 'Jogador TorinnoFC',
     nickname: user.nickname || user.name || 'Jogador',
     email: user.email || '',
-    password: user.password || '',
     role: user.role === 'admin' ? 'admin' : 'player',
     staffRole: user.staffRole || (user.role === 'admin' ? 'Admin' : 'Jogador'),
     position: user.position || 'Meio-campo',
@@ -523,6 +490,7 @@ function normalizeUser(user) {
     hasPlayerProfile: user.hasPlayerProfile || Boolean(user.playerId || user.player?.id),
     photo: user.photo || '',
     localOnly: Boolean(user.localOnly),
+    permissions: user.permissions || {},
   };
 }
 
@@ -555,24 +523,6 @@ function normalizePlayer(player) {
       notes: player.stats?.notes || '',
     },
   };
-}
-
-function makePlayerFromUser(user) {
-  const normalized = normalizeUser(user);
-  const id = normalized.playerId || `local-player-${normalizeEmail(normalized.email) || normalized.id}`;
-  return normalizePlayer({
-    id,
-    userId: normalized.id,
-    fullName: normalized.name,
-    nickname: normalized.nickname,
-    position: normalized.position,
-    shirt: normalized.shirt,
-    avatar: getInitials(normalized.nickname || normalized.name),
-    photo: normalized.photo,
-    status: 'Ativo',
-    localOnly: true,
-    stats: {},
-  });
 }
 
 function mergePlayers(...groups) {
@@ -775,6 +725,10 @@ function roleLabel(role) {
   return role === 'admin' ? 'Administrador' : 'Jogador';
 }
 
+function canUser(user, permission) {
+  return user?.role === 'admin' || user?.permissions?.[permission] === true;
+}
+
 function findPlayerForUser(user, players) {
   return players.find((player) => player.userId === user.id || player.id === user.playerId) || null;
 }
@@ -782,18 +736,18 @@ function findPlayerForUser(user, players) {
 function App() {
   const [users, setUsers] = useState(readSavedUsers);
   const [booting, setBooting] = useState(true);
-  const [session, setSession] = useState(() => readSavedSession(readSavedUsers()));
+  const [session, setSession] = useState(null);
   const [authMode, setAuthMode] = useState('login');
   const [view, setView] = useState(session ? 'dashboard' : 'landing');
   const [players, setPlayers] = useState(readSavedPlayers);
-  const [matches, setMatches] = useState(readSavedMatches);
+  const [matches, setMatches] = useState(initialMatches);
   const [championships, setChampionships] = useState(readSavedChampionships);
   const [serverState, setServerState] = useState({ loading: true, error: '' });
   const [notificationsState, setNotificationsState] = useState({ loading: false, error: '', items: [], unreadCount: 0 });
   const [notificationPreferences, setNotificationPreferences] = useState(readSavedNotificationPreferences);
   const [activities, setActivities] = useState([]);
   const [achievements, setAchievements] = useState([]);
-  const [tryouts, setTryouts] = useState(readSavedTryouts);
+  const [tryouts, setTryouts] = useState(initialTryouts);
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
   const [celebrating, setCelebrating] = useState(false);
@@ -807,12 +761,10 @@ function App() {
   }, [players]);
 
   useEffect(() => {
-    localStorage.setItem(localMatchesKey, JSON.stringify(matches));
-  }, [matches]);
-
-  useEffect(() => {
-    localStorage.setItem(localTryoutsKey, JSON.stringify(tryouts));
-  }, [tryouts]);
+    localStorage.removeItem(localMatchesKey);
+    localStorage.removeItem(localTryoutsKey);
+    localStorage.removeItem('torinnofc-session');
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(localChampionshipsKey, JSON.stringify(championships));
@@ -823,11 +775,6 @@ function App() {
       localStorage.setItem(localNotificationPreferencesKey, JSON.stringify(notificationPreferences));
     }
   }, [notificationPreferences]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setBooting(false), 1850);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     try {
@@ -855,7 +802,7 @@ function App() {
     const [matchesResult, championshipsResult, playersResult, tryoutsResult, usersResult] = results;
 
     if (matchesResult.status === 'fulfilled') {
-      setMatches(mergeById(normalizeMatchEvent, readSavedMatches(), matchesResult.value));
+      setMatches(matchesResult.value.map(normalizeMatchEvent));
     }
     if (championshipsResult.status === 'fulfilled') {
       setChampionships(mergeById(normalizeChampionshipItem, readSavedChampionships(), championshipsResult.value));
@@ -865,7 +812,7 @@ function App() {
       setPlayers(mergePlayers(cachedPlayers, playersResult.value.map(normalizePlayer)));
     }
     if (tryoutsResult.status === 'fulfilled') {
-      setTryouts(mergeById(normalizeTryout, readSavedTryouts(), tryoutsResult.value));
+      setTryouts(tryoutsResult.value.map(normalizeTryout));
     }
     if (usersResult.status === 'fulfilled') {
       const cachedUsers = readSavedUsers();
@@ -909,81 +856,6 @@ function App() {
       setSession(nextSession);
     }
   }, [users, session]);
-
-  useEffect(() => {
-    if (!session) return;
-    if (findPlayerForUser(session, players)) return;
-
-    const fallbackPlayer = makePlayerFromUser(session);
-    setPlayers((items) => mergePlayers([fallbackPlayer], items));
-    setUsers((items) => mergeUsers(items, [{ ...session, playerId: fallbackPlayer.id, hasPlayerProfile: true }]));
-    setSession((current) => current ? { ...current, playerId: fallbackPlayer.id, hasPlayerProfile: true } : current);
-  }, [session?.id, session?.email, players]);
-
-  useEffect(() => {
-    if (!session?.email) return undefined;
-
-    let active = true;
-    let syncing = false;
-
-    const syncCurrentUserAsPlayer = async () => {
-      if (syncing) return;
-      const currentUser = users.find((item) => (
-        item.id === session.id
-        || item.email?.toLowerCase() === session.email?.toLowerCase()
-      )) || session;
-      const currentPlayer = findPlayerForUser(currentUser, players);
-      const needsSync = !currentUser.backendId
-        || currentUser.localOnly
-        || !currentPlayer
-        || String(currentPlayer.id).startsWith('local-')
-        || currentPlayer.localOnly;
-
-      if (!needsSync) return;
-
-      syncing = true;
-      try {
-        const synced = await apiSyncUser(currentUser);
-        if (!active) return;
-        const syncedUser = normalizeUser({
-          ...currentUser,
-          id: synced.id,
-          backendId: synced.id,
-          role: synced.role,
-          staffRole: synced.staffRole,
-          playerId: synced.playerId,
-          hasPlayerProfile: Boolean(synced.playerId),
-          localOnly: false,
-        });
-        setUsers((items) => mergeUsers(items, [syncedUser]));
-        setSession(publicUser(syncedUser));
-        if (synced.player) {
-          setPlayers((items) => mergePlayers([normalizePlayer(synced.player)], items));
-        }
-        await refreshClubData({ silent: true });
-      } catch {
-        // Backend/banco pode estar indisponivel; o timer tenta novamente.
-      } finally {
-        syncing = false;
-      }
-    };
-
-    syncCurrentUserAsPlayer();
-    const timer = window.setInterval(syncCurrentUserAsPlayer, 15000);
-
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [session?.id, session?.email, users, players]);
-
-  useEffect(() => {
-    if (session) {
-      localStorage.setItem('torinnofc-session', JSON.stringify(session));
-    } else {
-      localStorage.removeItem('torinnofc-session');
-    }
-  }, [session]);
 
   useEffect(() => {
     if (!session?.email) {
@@ -1075,11 +947,7 @@ function App() {
     };
   }, [session?.id]);
 
-  if (booting) {
-    return <Preloader />;
-  }
-
-  const completeSupabaseAuth = async (supabaseUser) => {
+  const completeSupabaseAuth = async (supabaseUser, { navigate = true } = {}) => {
     const email = normalizeEmail(supabaseUser.email);
     const metadata = supabaseUser.user_metadata || {};
     const existing = users.find((user) => user.email.toLowerCase() === email);
@@ -1089,87 +957,36 @@ function App() {
       name: metadata.name || existing?.name || email.split('@')[0],
       nickname: metadata.nickname || existing?.nickname || metadata.name || email.split('@')[0],
       email,
-      password: existing?.password || '',
-      role: existing?.role || 'player',
-      staffRole: existing?.staffRole || 'Jogador',
       position: metadata.position || existing?.position || 'Meio-campo',
       shirt: metadata.shirt || existing?.shirt || '10',
     });
 
-    let syncedPlayer = null;
-
-    try {
-      const synced = await apiSyncUser(user);
-      user = normalizeUser({
-        ...user,
-        id: synced.id,
-        backendId: synced.id,
-        role: synced.role,
-        staffRole: synced.staffRole,
-        playerId: synced.playerId,
-        hasPlayerProfile: Boolean(synced.playerId),
-      });
-      if (synced.player) {
-        syncedPlayer = normalizePlayer(synced.player);
-      }
-    } catch {
-      // Mantem a sessao do Supabase ativa mesmo se o perfil local ainda nao sincronizar.
-      user.localOnly = true;
-    }
-
-    if (!syncedPlayer) {
-      syncedPlayer = makePlayerFromUser(user);
-      user.playerId = syncedPlayer.id;
-      user.hasPlayerProfile = true;
-    }
-
-    setPlayers((items) => mergePlayers([syncedPlayer], items));
-
-    setUsers((items) => mergeUsers(items, [user]));
-
-    setSession(publicUser(user));
-    await refreshClubData({ silent: true });
-    setView('dashboard');
-    return { ok: true };
-  };
-
-  const completeRegisteredAccount = async (registered, form) => {
-    const userPayload = registered?.user || {};
-    const playerPayload = registered?.player || null;
-    const user = normalizeUser({
-      ...userPayload,
-      id: userPayload.id || registered?.authUser?.id || `u-${Date.now()}`,
-      backendId: userPayload.id || '',
-      name: userPayload.name || form.name.trim(),
-      nickname: userPayload.nickname || form.nickname.trim(),
-      email: normalizeEmail(form.email),
-      password: form.password,
-      role: userPayload.role || 'player',
-      staffRole: userPayload.staffRole || 'Jogador',
-      position: form.position,
-      shirt: form.shirt,
-      playerId: registered?.playerId || userPayload.playerId || playerPayload?.id || '',
-      hasPlayerProfile: Boolean(registered?.playerId || userPayload.playerId || playerPayload?.id),
-      localOnly: Boolean(registered?.localOnly),
+    const synced = await apiSyncUser(user);
+    user = normalizeUser({
+      ...user,
+      id: synced.id,
+      backendId: synced.id,
+      role: synced.role,
+      staffRole: synced.staffRole,
+      permissions: synced.permissions,
+      playerId: synced.playerId,
+      hasPlayerProfile: Boolean(synced.playerId),
+      localOnly: false,
     });
-
-    let syncedPlayer = playerPayload ? normalizePlayer(playerPayload) : null;
-    if (!syncedPlayer) {
-      syncedPlayer = makePlayerFromUser(user);
-      user.playerId = syncedPlayer.id;
-      user.hasPlayerProfile = true;
+    if (synced.player) {
+      setPlayers((items) => mergePlayers([normalizePlayer(synced.player)], items));
     }
 
-    setPlayers((items) => mergePlayers([syncedPlayer], items));
     setUsers((items) => mergeUsers(items, [user]));
+
     setSession(publicUser(user));
     await refreshClubData({ silent: true });
-    setView('dashboard');
+    if (navigate) setView('dashboard');
     return { ok: true };
   };
 
   const completeServerRegistration = async (form) => {
-    const registered = await apiRegisterAccount({
+    await apiRegisterAccount({
       name: form.name.trim(),
       nickname: form.nickname.trim(),
       email: normalizeEmail(form.email),
@@ -1178,140 +995,75 @@ function App() {
       shirt: form.shirt,
     });
 
-    if (hasSupabaseConfig && !registered?.localOnly) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: normalizeEmail(form.email),
-        password: form.password,
-      });
+    const data = await signInWithPassword(normalizeEmail(form.email), form.password);
+    if (!data.user) throw new Error('Conta criada, mas a sessao nao foi iniciada. Faca login novamente.');
+    return completeSupabaseAuth(data.user);
+  };
 
-      if (!error && data.user) {
-        return completeSupabaseAuth(data.user);
-      }
-
-      if (import.meta.env.DEV && error) console.error('[auth/signin-after-register]', error);
+  useEffect(() => {
+    let active = true;
+    if (!hasSupabaseConfig) {
+      setBooting(false);
+      return undefined;
     }
 
-    return completeRegisteredAccount(registered, form);
-  };
+    const restore = async (authSession, navigate = true) => {
+      if (!active) return;
+      if (!authSession?.user) {
+        setSession(null);
+        setBooting(false);
+        return;
+      }
+      try {
+        await completeSupabaseAuth(authSession.user, { navigate });
+      } catch (error) {
+        if (!active) return;
+        setSession(null);
+        setServerState((state) => ({ ...state, error: error.message || 'Nao foi possivel restaurar seu perfil.' }));
+      } finally {
+        if (active) setBooting(false);
+      }
+    };
+
+    getAuthSession().then(restore).catch((error) => {
+      if (active) {
+        setServerState((state) => ({ ...state, error: error.message || 'Nao foi possivel restaurar a sessao.' }));
+        setBooting(false);
+      }
+    });
+    const unsubscribe = subscribeToAuthChanges((authSession) => restore(authSession, false));
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
 
   const handleAuth = async (form, isRegister) => {
     const email = normalizeEmail(form.email);
     if (!isValidEmail(email)) {
       return { error: 'Digite um e-mail valido.' };
     }
-    const existing = users.find((user) => user.email.toLowerCase() === email);
+    if (!hasSupabaseConfig) {
+      return { error: 'Autenticacao indisponivel. Configure o Supabase no frontend.' };
+    }
 
     if (isRegister) {
-      if (existing && !hasSupabaseConfig && existing.password) {
-        return { error: 'Este e-mail ja esta cadastrado. Faca login para continuar.' };
-      }
-
-      if (hasSupabaseConfig) {
-        try {
-          return await completeServerRegistration(form);
-        } catch (serverRegisterError) {
-          if (import.meta.env.DEV) console.error('[auth/server-register]', serverRegisterError);
-          if (/cadastrado|registered|already|exists/i.test(String(serverRegisterError?.message || ''))) {
-            return { error: authErrorMessage(serverRegisterError, 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.') };
-          }
-        }
-
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password: form.password,
-          options: {
-            emailRedirectTo: window.location.origin,
-            data: {
-              name: form.name.trim(),
-              nickname: form.nickname.trim(),
-              position: form.position,
-              shirt: form.shirt,
-            },
-          },
-        });
-
-        if (error) {
-          if (import.meta.env.DEV) console.error('[auth/signup]', error);
-          if (/registered|already|exists/i.test(String(error.message || ''))) {
-            return { error: authErrorMessage(error, 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.') };
-          }
-        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
-          return { error: 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.' };
-        } else if (data.user) {
-          return completeSupabaseAuth(data.user);
-        }
-      }
-
-      const user = normalizeUser({
-        id: `u-${Date.now()}`,
-        name: form.name.trim(),
-        nickname: form.nickname.trim(),
-        email,
-        password: form.password,
-        role: 'player',
-        staffRole: 'Jogador',
-        position: form.position,
-        shirt: form.shirt,
-      });
-
-      let userWithPlayer = { ...user };
-      let syncedPlayer = null;
       try {
-        const synced = await apiSyncUser(userWithPlayer);
-        userWithPlayer = normalizeUser({
-          ...userWithPlayer,
-          id: synced.id,
-          backendId: synced.id,
-          role: synced.role,
-          staffRole: synced.staffRole,
-          playerId: synced.playerId,
-          hasPlayerProfile: Boolean(synced.playerId),
-        });
-        if (synced.player) {
-          syncedPlayer = normalizePlayer(synced.player);
-        }
-      } catch {
-        userWithPlayer.localOnly = true;
-        syncedPlayer = makePlayerFromUser(userWithPlayer);
-        userWithPlayer.playerId = syncedPlayer.id;
-        userWithPlayer.hasPlayerProfile = true;
+        return await completeServerRegistration(form);
+      } catch (error) {
+        return { error: authErrorMessage(error, error.message || 'Nao foi possivel criar a conta.') };
       }
-
-      setPlayers((items) => mergePlayers([syncedPlayer || makePlayerFromUser(userWithPlayer)], items));
-      setUsers((items) => mergeUsers(items, [userWithPlayer]));
-      setSession(publicUser(userWithPlayer));
-      await refreshClubData({ silent: true });
-      setView('dashboard');
-      return { ok: true };
     }
 
-    if (hasSupabaseConfig) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: form.password,
-      });
-
-      if (!error && data.user) {
+    try {
+      const data = await signInWithPassword(email, form.password);
+      if (data.user) {
         return completeSupabaseAuth(data.user);
       }
-
-      if (import.meta.env.DEV && error) console.error('[auth/signin]', error);
-      if (existing?.password && existing.password === form.password) {
-        setSession(publicUser(existing));
-        setView('dashboard');
-        return { ok: true };
-      }
-
+      return { error: 'E-mail ou senha incorretos.' };
+    } catch (error) {
       return { error: authErrorMessage(error, 'E-mail ou senha incorretos.') };
     }
-
-    if (!existing || !existing.password || existing.password !== form.password) {
-      return { error: 'E-mail ou senha incorretos.' };
-    }
-
-    setSession(publicUser(existing));
-    setView('dashboard');
-    return { ok: true };
   };
 
   const notify = (message) => {
@@ -1325,22 +1077,9 @@ function App() {
 
   const saveMatch = async (match, existingId) => {
     const payload = toMatchPayload(match);
-    const fallbackMatch = normalizeMatchEvent({
-      ...match,
-      id: existingId || `local-match-${Date.now()}`,
-      localOnly: true,
-    });
-    let saved;
-
-    try {
-      saved = existingId && !String(existingId).startsWith('local-')
-        ? await apiUpdateMatch(existingId, payload)
-        : !existingId
-          ? await apiCreateMatch(payload)
-          : fallbackMatch;
-    } catch {
-      saved = fallbackMatch;
-    }
+    const saved = existingId
+      ? await apiUpdateMatch(existingId, payload)
+      : await apiCreateMatch(payload);
 
     setMatches((items) => {
       const normalized = normalizeMatchEvent(saved);
@@ -1353,28 +1092,15 @@ function App() {
   };
 
   const removeMatch = async (matchId) => {
-    if (!String(matchId).startsWith('local-')) {
-      await apiDeleteMatch(matchId).catch(() => null);
-    }
+    await apiDeleteMatch(matchId);
     setMatches((items) => items.filter((match) => match.id !== matchId));
     await refreshClubData({ silent: true });
   };
 
   const saveChampionship = async (championship, existingId) => {
-    let saved;
-    try {
-      saved = existingId && !String(existingId).startsWith('local-')
-        ? await apiUpdateChampionship(existingId, championship)
-        : !existingId
-          ? await apiCreateChampionship(championship)
-          : normalizeChampionshipItem({ ...championship, id: existingId, localOnly: true });
-    } catch {
-      saved = normalizeChampionshipItem({
-        ...championship,
-        id: existingId || `local-championship-${Date.now()}`,
-        localOnly: true,
-      });
-    }
+    const saved = existingId
+      ? await apiUpdateChampionship(existingId, championship)
+      : await apiCreateChampionship(championship);
     setChampionships((items) => (
       existingId
         ? items.map((item) => (item.id === existingId ? saved : item))
@@ -1503,9 +1229,7 @@ function App() {
     }
 
     try {
-      if (hasSupabaseConfig) {
-        await supabase.auth.signOut(allDevices ? { scope: 'global' } : undefined);
-      }
+      if (hasSupabaseConfig) await signOutSupabase({ allDevices });
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('[logout]', error);
@@ -1535,6 +1259,10 @@ function App() {
     setSession(null);
     setView('auth');
   };
+
+  if (booting) {
+    return <Preloader />;
+  }
 
   if (!session) {
     if (view === 'auth') {
@@ -2896,7 +2624,6 @@ function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify
                 profileUpdate: true,
               };
 
-              let metadataSynced = false;
               if (hasSupabaseConfig) {
                 try {
                   const { error } = await supabase.auth.updateUser({
@@ -2909,9 +2636,9 @@ function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify
                       photo: nextUser.photo,
                     },
                   });
-                  metadataSynced = !error;
+                  if (error) throw error;
                 } catch {
-                  metadataSynced = false;
+                  notify('Nao foi possivel atualizar os metadados de autenticacao.');
                 }
               }
 
@@ -2940,28 +2667,7 @@ function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify
                 setEditing(false);
                 notify('Perfil salvo e sincronizado com o elenco.');
               } catch (error) {
-                const savedUser = normalizeUser({ ...nextUser, localOnly: true });
-                const fallbackPlayer = normalizePlayer({
-                  ...(linkedPlayer || makePlayerFromUser(savedUser)),
-                  userId: savedUser.id,
-                  fullName: savedUser.name,
-                  nickname: savedUser.nickname,
-                  position: savedUser.position,
-                  shirt: savedUser.shirt,
-                  bio: savedUser.bio,
-                  photo: savedUser.photo,
-                  localOnly: true,
-                });
-                savedUser.playerId = fallbackPlayer.id;
-                savedUser.hasPlayerProfile = true;
-                setUser(publicUser(savedUser));
-                setUsers((items) => mergeUsers(items, [savedUser]));
-                setPlayers((items) => mergePlayers([fallbackPlayer], items));
-                await refreshClubData?.({ silent: true });
-                setEditing(false);
-                notify(metadataSynced
-                  ? 'Perfil salvo no Supabase. O banco sincroniza quando voltar.'
-                  : error.message || 'Perfil salvo neste aparelho. O banco ainda nao respondeu.');
+                notify(error.message || 'Nao foi possivel salvar o perfil no banco.');
               }
             }}
           >
@@ -3450,7 +3156,8 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
     requirements: '',
     notes: '',
   });
-  const isAdmin = user?.role === 'admin';
+  const [saving, setSaving] = useState(false);
+  const canManage = canUser(user, 'manageTryouts');
 
   const updateCandidate = (id, patch) => {
     setForm((current) => ({
@@ -3480,8 +3187,8 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!isAdmin) {
-      notify('Somente administradores podem agendar peneiras.');
+    if (!canManage) {
+      notify('Voce nao possui permissao para agendar peneiras.');
       return;
     }
     const candidates = normalizeTryoutPlayers(form.players);
@@ -3502,18 +3209,20 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
     };
     let normalized;
 
+    setSaving(true);
     try {
       const saved = await apiCreateTryout(tryout);
       normalized = normalizeTryout(saved);
+      setTryouts((items) => mergeById(normalizeTryout, [normalized], items));
       await refreshClubData?.({ silent: true });
       notify('Peneira agendada e salva no banco.');
-    } catch {
-      normalized = normalizeTryout({ ...tryout, localOnly: true });
-      notify('Peneira criada localmente. Ela aparece no calendario; o banco sincroniza quando voltar.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel criar a peneira.');
+      return;
+    } finally {
+      setSaving(false);
     }
 
-    setTryouts((items) => mergeById(normalizeTryout, [normalized], items));
-    openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(normalized), notify);
     setForm({
       players: [{ id: 'candidate-1', name: '', position: 'Atacante' }],
       age: '',
@@ -3554,9 +3263,9 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
 
   return (
     <section>
-      <SectionHeader eyebrow="EA Sports FC | Pro Clubs" title={isAdmin ? 'Agendar teste' : 'Peneiras'} />
+      <SectionHeader eyebrow="EA Sports FC | Pro Clubs" title={canManage ? 'Nova peneira' : 'Peneiras'} />
       <div className="tryout-layout">
-        {isAdmin ? (
+        {canManage ? (
           <form className="panel tryout-form" onSubmit={submit}>
             <h3>Nova peneira no EA FC</h3>
             <div className="tryout-candidates">
@@ -3606,9 +3315,9 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
                 placeholder="Ex: disponibilidade, estilo de jogo, headset, posicoes secundarias"
               />
             </label>
-            <button className="button primary full" type="submit">
+            <button className="button primary full" type="submit" disabled={saving}>
               <CalendarDays size={16} />
-              Agendar teste
+              {saving ? 'Salvando...' : 'Nova peneira'}
             </button>
           </form>
         ) : (
@@ -3654,8 +3363,11 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
                   {tryout.requirements && <em>{tryout.requirements}</em>}
                   {tryout.notes && <em>{tryout.notes}</em>}
                 </div>
-                {isAdmin && (
+                {canManage && (
                   <div className="tryout-actions">
+                    <button className="button minimal" type="button" onClick={() => openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(tryout), notify)}>
+                      Compartilhar no WhatsApp
+                    </button>
                     <button className={`status ${tryout.status === 'Confirmada' ? 'live' : ''}`} type="button" onClick={() => updateStatus(tryout.id, tryout.status === 'Confirmada' ? 'Agendada' : 'Confirmada')}>
                       {tryout.status}
                     </button>
@@ -3792,10 +3504,50 @@ function MatchStatsRecorder({ match, players = [], setPlayers, notify, refreshCl
   );
 }
 
-function Matches({ user, players, setPlayers, matches, saveMatch, notify, refreshClubData }) {
+function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, championships = [], notify, refreshClubData }) {
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const canCreate = canUser(user, 'createMatch');
+  const canManage = canCreate || canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
+
+  const handleSave = async (form, existingId) => {
+    const match = normalizeMatchEvent({ ...form, home: 'TorinnoFC', date: formatDateLabel(form.dateKey), homeLogo: logo, score: form.score || '-' });
+    if (!existingId && isDuplicateMatch(matches, match)) {
+      notify('Essa partida ja existe nesse dia e horario.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveMatch(match, existingId);
+      setModal(null);
+      notify(existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel salvar a partida.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Excluir esta partida?')) return;
+    setSaving(true);
+    try {
+      await removeMatch(id);
+      setModal(null);
+      notify('Partida removida.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel excluir a partida.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section>
-      <SectionHeader eyebrow="Agenda competitiva" title="Partidas" />
+      <div className="calendar-header">
+        <SectionHeader eyebrow="Agenda competitiva" title="Partidas" />
+        {canCreate && <button className="button primary" type="button" onClick={() => setModal({ type: 'new-match', dateKey: toDateKey(new Date()) })}><Plus size={16} />Nova partida</button>}
+      </div>
       <div className="match-list">
         {matches.map((match) => (
           <MatchCard
@@ -3810,6 +3562,22 @@ function Matches({ user, players, setPlayers, matches, saveMatch, notify, refres
           />
         ))}
       </div>
+      {modal && (
+        <MatchModal
+          modal={modal}
+          championships={championships}
+          isAdmin={canManage}
+          players={players}
+          setPlayers={setPlayers}
+          saving={saving}
+          notify={notify}
+          refreshClubData={refreshClubData}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+          onEdit={(match) => setModal({ type: 'edit-match', dateKey: match.dateKey, match })}
+          onDelete={handleDelete}
+        />
+      )}
     </section>
   );
 }
@@ -3838,11 +3606,12 @@ function Calendar({
   const selectedEvents = calendarEvents.filter((event) => event.dateKey === selectedDateKey);
   const visibleEvents = filter === 'Todos' ? calendarEvents : calendarEvents.filter((event) => getEventType(event) === filter);
   const selectedDateLabel = formatDateLabel(selectedDateKey);
-  const isAdmin = user?.role === 'admin';
+  const canCreateMatch = canUser(user, 'createMatch');
+  const canManageMatch = canCreateMatch || canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
 
   const openForm = (dateKey, match = null) => {
-    if (!isAdmin && !match) {
-      notify('Somente administradores podem criar partidas.');
+    if (!canCreateMatch && !match) {
+      notify('Voce nao possui permissao para criar partidas.');
       return;
     }
     setSelectedDateKey(dateKey);
@@ -3865,15 +3634,10 @@ function Calendar({
 
     setSaving(true);
     try {
-      const saved = await saveMatch(match, existingId);
+      await saveMatch(match, existingId);
       setSelectedDateKey(match.dateKey);
       setModal(null);
-      notify(saved?.localOnly
-        ? 'Partida salva localmente e exibida no calendario. O banco sincroniza quando voltar.'
-        : existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
-      if (!existingId) {
-        openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify);
-      }
+      notify(existingId ? 'Partida atualizada.' : 'Partida cadastrada com sucesso.');
     } catch (error) {
       notify(error.message || 'Nao foi possivel salvar a partida.');
     } finally {
@@ -4046,7 +3810,7 @@ function Calendar({
         <MatchModal
           modal={modal}
           championships={championships}
-          isAdmin={isAdmin}
+          isAdmin={canManageMatch}
           players={players}
           setPlayers={setPlayers}
           saving={saving}
@@ -4151,12 +3915,12 @@ function MatchModal({
 
   const handleLogoFile = async (file) => {
     if (!file) return;
-    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      return;
+    try {
+      const dataUrl = await prepareOpponentLogo(file);
+      setForm((current) => ({ ...current, opponentLogo: dataUrl }));
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel carregar a logo do adversario.');
     }
-    const dataUrl = await readFileAsDataUrl(file);
-    setForm({ ...form, opponentLogo: dataUrl });
   };
 
   const submit = (event) => {
@@ -4225,6 +3989,9 @@ function MatchModal({
               </div>
             )}
             <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify)}>
+                Compartilhar no WhatsApp
+              </button>
               {match.whatsappUrl && (
                 <button className="button primary" type="button" onClick={() => window.open(match.whatsappUrl, '_blank', 'noopener,noreferrer')}>
                   Acessar grupo do WhatsApp
@@ -4266,6 +4033,7 @@ function MatchModal({
               </label>
               <Field label="Campeonato manual" value={form.championship} onChange={(championship) => setForm({ ...form, championship, championshipId: '' })} />
             </div>
+            <Field label="Local" value={form.place} onChange={(place) => setForm({ ...form, place })} />
             <Field label="Link do WhatsApp" value={form.whatsappUrl} onChange={(whatsappUrl) => setForm({ ...form, whatsappUrl })} />
             <div className="form-grid">
               <Field label="Logo por URL" value={form.opponentLogo?.startsWith('data:') ? '' : form.opponentLogo} onChange={(opponentLogo) => setForm({ ...form, opponentLogo })} />
@@ -4649,28 +4417,15 @@ function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, cre
       return;
     }
 
-    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    const maxSize = 5 * 1024 * 1024;
-
-    if (!validTypes.includes(file.type)) {
-      notify('Use uma imagem PNG, JPG, JPEG ou WEBP.');
-      return;
-    }
-
-    if (file.size > maxSize) {
-      notify('A logo deve ter no maximo 5MB.');
-      return;
-    }
-
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await prepareOpponentLogo(file);
       setNewMatch({
         ...newMatch,
         opponentLogo: file,
         opponentLogoPreview: dataUrl,
       });
-    } catch {
-      notify('Nao foi possivel carregar a logo do adversario.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel carregar a logo do adversario.');
     }
   };
 
@@ -4711,7 +4466,6 @@ function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, cre
     try {
       await saveMatch(match);
       notify('Partida cadastrada com sucesso.');
-      openWhatsAppWithPreparedMessage(match.whatsappUrl, buildMatchWhatsAppMessage(match), notify);
     } catch (error) {
       notify(error.message || 'Nao foi possivel criar a partida.');
       return;

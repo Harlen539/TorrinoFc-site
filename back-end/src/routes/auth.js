@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { env } from '../config/env.js';
+import { env, getMissingSupabaseConfig } from '../config/env.js';
 import { isValidEmail, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
@@ -33,30 +33,31 @@ function isExistingAuthUserError(message) {
 }
 
 async function createSupabaseAuthUser({ email, password, name, nickname, position, shirt }) {
-  if (!env.supabase.url || !env.supabase.secretKey) {
-    return null;
+  const missing = getMissingSupabaseConfig({ requireServiceRole: true });
+  if (missing.length) {
+    throw httpError(503, `Cadastro indisponivel: configure ${missing.join(', ')} no backend.`);
   }
 
   const baseUrl = env.supabase.url.replace(/\/$/, '');
-  const response = await fetch(`${baseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: env.supabase.secretKey,
-      Authorization: `Bearer ${env.supabase.secretKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        name,
-        nickname,
-        position,
-        shirt,
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: env.supabase.secretKey,
+        Authorization: `Bearer ${env.supabase.secretKey}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, nickname, position, shirt },
+      }),
+    });
+  } catch {
+    throw httpError(503, 'Nao foi possivel conectar ao Supabase Auth. Tente novamente.');
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -64,10 +65,25 @@ async function createSupabaseAuthUser({ email, password, name, nickname, positio
     if (isExistingAuthUserError(message)) {
       throw httpError(409, 'Este e-mail ja esta cadastrado. Faca login ou recupere a senha.');
     }
-    throw httpError(502, message);
+    throw httpError(response.status >= 500 ? 503 : 400, message);
   }
 
   return payload;
+}
+
+async function deleteSupabaseAuthUser(userId) {
+  if (!userId) return;
+  const baseUrl = env.supabase.url.replace(/\/$/, '');
+  const rollbackResponse = await fetch(`${baseUrl}/auth/v1/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: env.supabase.secretKey,
+      Authorization: `Bearer ${env.supabase.secretKey}`,
+    },
+  });
+  if (!rollbackResponse.ok && rollbackResponse.status !== 404) {
+    throw new Error('Falha ao remover do Supabase Auth a conta criada durante o rollback.');
+  }
 }
 
 function makePublicAuthUser(user) {
@@ -104,7 +120,7 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
   try {
     result = await prisma.$transaction(async (tx) => {
       const existing = await tx.userProfile.findFirst({
-        where: { email },
+        where: { email: { equals: email, mode: 'insensitive' } },
         include: { playerProfile: true },
       });
       const data = {
@@ -133,15 +149,18 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
           include: { playerProfile: true },
         });
 
-      const player = await ensurePlayerForUser(tx, profile, {
-        name,
-        nickname,
-        position,
-        shirt,
-        avatarUrl: request.body.avatarUrl,
-        photo: request.body.photo || request.body.photoUrl,
-        bio: request.body.bio,
-      });
+      const shouldHavePlayer = profile.role !== 'admin' || Boolean(profile.playerProfile);
+      const player = shouldHavePlayer
+        ? await ensurePlayerForUser(tx, profile, {
+          name,
+          nickname,
+          position,
+          shirt,
+          avatarUrl: request.body.avatarUrl,
+          photo: request.body.photo || request.body.photoUrl,
+          bio: request.body.bio,
+        })
+        : null;
       const syncedProfile = await tx.userProfile.findUnique({
         where: { id: profile.id },
         include: { playerProfile: true },
@@ -150,41 +169,27 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
       return { profile: syncedProfile, player, isNewProfile: !existing };
     });
   } catch (error) {
-    console.error('[auth/register] Conta criada no Auth, mas perfil nao sincronizou:', error);
-    response.status(201).json({
-      user: {
-        id: authUser?.id || '',
-        name,
-        nickname,
-        email,
-        role: 'player',
-        staffRole: 'Jogador',
-        accountStatus: 'active',
-        playerId: '',
-        hasPlayerProfile: false,
-      },
-      player: null,
-      playerId: '',
-      role: 'player',
-      staffRole: 'Jogador',
-      authUser: makePublicAuthUser(authUser),
-      localOnly: !authUser,
-      warning: 'Conta criada, mas o perfil ainda nao sincronizou com o banco.',
-    });
-    return;
+    try {
+      await deleteSupabaseAuthUser(authUser?.id);
+    } catch (rollbackError) {
+      console.error('[auth/register] Rollback do Supabase Auth falhou:', rollbackError);
+    }
+    throw httpError(500, 'Nao foi possivel criar o perfil. A criacao da conta foi revertida; tente novamente.');
   }
 
   if (result.isNewProfile) {
-    await notifyMemberJoined(result.profile);
-    await recordActivity({
-      type: 'member_joined',
-      actorId: result.profile.id,
-      actorName: result.profile.nickname || result.profile.name,
-      message: `${result.profile.nickname || result.profile.name} entrou para o clube.`,
-      relatedEntityType: 'user',
-      relatedEntityId: result.profile.id,
-      actionUrl: '/players',
-    });
+    await Promise.allSettled([
+      notifyMemberJoined(result.profile),
+      recordActivity({
+        type: 'member_joined',
+        actorId: result.profile.id,
+        actorName: result.profile.nickname || result.profile.name,
+        message: `${result.profile.nickname || result.profile.name} entrou para o clube.`,
+        relatedEntityType: 'user',
+        relatedEntityId: result.profile.id,
+        actionUrl: '/players',
+      }),
+    ]);
   }
 
   response.status(201).json({
@@ -194,6 +199,5 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
     role: result.profile.role,
     staffRole: result.profile.staffRole || (result.profile.role === 'admin' ? 'Admin' : 'Jogador'),
     authUser: makePublicAuthUser(authUser),
-    localOnly: !authUser,
   });
 }));

@@ -99,7 +99,7 @@ Preencha o arquivo `front-end/.env`:
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sua-chave-publica
-VITE_ADMIN_API_URL=http://localhost:4000
+VITE_API_URL=http://localhost:4000
 ```
 
 > Nunca coloque a chave secreta do Supabase ou credenciais administrativas em variáveis `VITE_*`, pois elas ficam acessíveis no navegador.
@@ -133,7 +133,7 @@ DIRECT_URL=postgresql://...
 
 SUPABASE_URL=https://seu-projeto.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sua-chave-publica
-SUPABASE_SECRET_KEY=sua-chave-secreta
+SUPABASE_SERVICE_ROLE_KEY=sua-chave-service-role
 SUPABASE_JWKS_URL=https://seu-projeto.supabase.co/auth/v1/.well-known/jwks.json
 
 WHATSAPP_NOTIFICATION_MODE=manual
@@ -203,6 +203,9 @@ A configuração completa está em [back-end/WHATSAPP_NOTIFICATIONS.md](./back-e
 
 - O frontend envia o token do Supabase no cabeçalho `Authorization: Bearer <access_token>`.
 - O backend valida o usuário e consulta `profiles.role` como fonte de verdade para permissões.
+- `VITE_SUPABASE_URL` e `SUPABASE_URL` devem apontar para exatamente o mesmo projeto Supabase.
+- O cadastro exige `SUPABASE_SERVICE_ROLE_KEY`; se ela estiver ausente, a API retorna 503 e não cria perfil órfão.
+- O frontend não armazena senhas nem mantém uma sessão paralela no `localStorage`; a persistência é gerenciada pelo Supabase Auth.
 - Chaves secretas, URLs do banco e credenciais SMTP devem existir apenas no backend.
 - O arquivo `.env` não deve ser versionado.
 - A variável `ADMIN_API_KEY` existe somente para compatibilidade legada interna e não deve ser exposta no frontend.

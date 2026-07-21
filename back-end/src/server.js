@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import { env } from './config/env.js';
+import { assertBackendConfig, env } from './config/env.js';
 import { adminEmailRouter } from './routes/adminEmail.js';
 import { adminMatchesRouter } from './routes/adminMatches.js';
 import { adminTryoutsRouter } from './routes/adminTryouts.js';
@@ -19,6 +19,8 @@ import { prisma } from './lib/prisma.js';
 import { startReminderScheduler } from './services/reminderScheduler.js';
 
 const app = express();
+
+assertBackendConfig();
 
 app.disable('x-powered-by');
 

@@ -63,8 +63,19 @@ export function assertBackendConfig() {
   const missing = [];
 
   if (!env.databaseUrl) missing.push('DATABASE_URL');
+  if (!env.supabase.url) missing.push('SUPABASE_URL');
+  if (!env.supabase.secretKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!env.supabase.jwksUrl) missing.push('SUPABASE_JWKS_URL');
 
   if (missing.length > 0) {
     throw new Error(`Variaveis de ambiente obrigatorias ausentes: ${missing.join(', ')}`);
   }
+}
+
+export function getMissingSupabaseConfig({ requireServiceRole = false } = {}) {
+  const missing = [];
+  if (!env.supabase.url) missing.push('SUPABASE_URL');
+  if (!env.supabase.jwksUrl) missing.push('SUPABASE_JWKS_URL');
+  if (requireServiceRole && !env.supabase.secretKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  return missing;
 }

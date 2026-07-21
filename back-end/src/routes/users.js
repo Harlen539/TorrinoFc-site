@@ -3,10 +3,11 @@ import { isValidEmail, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer, serializeUserProfile } from '../lib/serializers.js';
-import { requireAdminUser, requirePermission } from '../middleware/requireAdminApiKey.js';
+import { requireAdminUser, requireAuthenticatedUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { ensurePlayerForUser } from '../services/playerSyncService.js';
 import { notifyMemberJoined, notifyRoleUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
+import { getRolePermissions } from '../services/settingsService.js';
 
 export const usersRouter = Router();
 
@@ -27,7 +28,7 @@ usersRouter.get('/api/users', requireAdminUser, asyncRoute(async (_request, resp
   response.json({ users: users.map(serializeUserProfile) });
 }));
 
-usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
+usersRouter.post('/api/users/sync', requireAuthenticatedUser, asyncRoute(async (request, response) => {
   const email = String(request.body.email || '').trim().toLowerCase();
   const errors = [];
 
@@ -39,11 +40,16 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
     return;
   }
 
-  const existing = await prisma.userProfile.findFirst({ where: { email } });
+  if (email !== String(request.auth?.email || '').trim().toLowerCase()) {
+    response.status(403).json({ error: 'A sessao nao pertence ao e-mail informado.' });
+    return;
+  }
+
+  const existing = await prisma.userProfile.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
   const data = {
     name: sanitizeText(request.body.name, { maxLength: 120 }),
     nickname: sanitizeNullableText(request.body.nickname, { maxLength: 80 }),
-    accountStatus: sanitizeText(request.body.accountStatus, { maxLength: 32, fallback: 'active' }),
+    accountStatus: existing?.accountStatus || 'active',
     updatedAt: new Date(),
     ...(request.body.avatarUrl || request.body.photo
       ? { avatarUrl: sanitizeNullableText(request.body.avatarUrl || request.body.photo, { maxLength: 1200 }) }
@@ -69,7 +75,8 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
         include: { playerProfile: true },
       });
 
-    const player = await ensurePlayerForUser(tx, profile, request.body);
+    const shouldHavePlayer = profile.role !== 'admin' || Boolean(profile.playerProfile);
+    const player = shouldHavePlayer ? await ensurePlayerForUser(tx, profile, request.body) : null;
     const syncedProfile = await tx.userProfile.findUnique({
       where: { id: profile.id },
       include: { playerProfile: true },
@@ -101,12 +108,14 @@ usersRouter.post('/api/users/sync', asyncRoute(async (request, response) => {
     });
   }
 
+  const permissions = await getRolePermissions(prisma);
   response.status(201).json({
     user: serializeUserProfile(result.profile),
     player: result.player ? serializePlayer(result.player) : null,
     playerId: result.player?.id || '',
     role: result.profile.role,
     staffRole: result.profile.staffRole || (result.profile.role === 'admin' ? 'Admin' : 'Jogador'),
+    permissions: permissions[result.profile.role] || {},
   });
 }));
 

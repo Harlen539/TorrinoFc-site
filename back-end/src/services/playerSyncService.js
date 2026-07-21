@@ -76,6 +76,7 @@ export async function ensurePlayersForExistingUsers(prisma) {
   const profiles = await prisma.userProfile.findMany({
     where: {
       accountStatus: { not: 'removed' },
+      role: { not: 'admin' },
     },
     include: { playerProfile: true },
     orderBy: { joinedAt: 'asc' },

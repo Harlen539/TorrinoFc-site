@@ -8,6 +8,20 @@ const API_BASE_URL = (
   || (import.meta.env.PROD ? productionApiUrl : localApiUrl)
 ).replace(/\/$/, '');
 
+export class ApiError extends Error {
+  constructor(message, { status = 0, code = '', details = null, cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function isNetworkError(error) {
+  return error instanceof ApiError && error.status === 0 && error.code === 'NETWORK_ERROR';
+}
+
 async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
   const headers = {
     'Content-Type': 'application/json',
@@ -24,15 +38,6 @@ async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
     }
   }
 
-  if (!userEmail) {
-    try {
-      const savedSession = JSON.parse(localStorage.getItem('torinnofc-session') || '{}');
-      userEmail = savedSession.email || '';
-    } catch {
-      userEmail = '';
-    }
-  }
-
   if (userEmail) {
     headers['x-user-email'] = String(userEmail).trim().toLowerCase();
   }
@@ -46,7 +51,16 @@ async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, options);
+  } catch (error) {
+    throw new ApiError('Nao foi possivel conectar ao servidor.', {
+      status: 0,
+      code: 'NETWORK_ERROR',
+      cause: error,
+    });
+  }
 
   if (response.status === 204) return null;
 
@@ -56,7 +70,11 @@ async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
       ? 'O servidor retornou erro 500. Verifique as variaveis DATABASE_URL/DIRECT_URL e rode as migrations do banco no Render.'
       : 'Nao foi possivel concluir a operacao.';
     const message = payload.error || payload.errors?.join(' ') || fallbackMessage;
-    throw new Error(message);
+    throw new ApiError(message, {
+      status: response.status,
+      code: payload.code || payload.errorCode || '',
+      details: payload,
+    });
   }
 
   return payload;
@@ -145,6 +163,7 @@ export function syncUser(payload) {
     playerId: data.playerId || data.user?.playerId || '',
     role: data.role || data.user?.role,
     staffRole: data.staffRole || data.user?.staffRole,
+    permissions: data.permissions || {},
   }));
 }
 

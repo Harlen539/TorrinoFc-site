@@ -19,10 +19,11 @@ function validateMatchPayload(body) {
 
   if (!sanitizeText(body.away_team || body.away, { maxLength: 80 })) errors.push('Nome do adversario e obrigatorio.');
   if (!parseDateInput(body.match_date || body.dateKey || body.date)) errors.push('Data da partida precisa estar no formato YYYY-MM-DD.');
-  if (body.match_time || body.time) {
-    if (!parseTimeInput(body.match_time || body.time)) errors.push('Horario da partida precisa estar no formato HH:mm.');
-  }
-  if (!isValidUrl(body.opponent_logo_url || body.opponentLogo)) errors.push('URL da logo do adversario invalida.');
+  if (!parseTimeInput(body.match_time || body.time)) errors.push('Horario da partida precisa estar no formato HH:mm.');
+  const opponentLogo = String(body.opponent_logo_url || body.opponentLogo || '');
+  const isAllowedDataImage = /^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(opponentLogo)
+    && Buffer.byteLength(opponentLogo, 'utf8') <= 60000;
+  if (opponentLogo && !isValidUrl(opponentLogo) && !isAllowedDataImage) errors.push('Logo do adversario invalida ou acima do limite de 60 KB.');
   if (!isValidUrl(body.whatsapp_url || body.whatsappUrl)) errors.push('Link do WhatsApp invalido.');
 
   return errors;
@@ -33,7 +34,7 @@ function makeMatchData(body) {
   const awayScore = body.away_score === '' || body.away_score === undefined ? null : Number(body.away_score);
 
   return {
-    homeTeam: sanitizeText(body.home_team || body.home || 'TorinnoFC', { maxLength: 80, fallback: 'TorinnoFC' }),
+    homeTeam: 'TorinnoFC',
     awayTeam: sanitizeText(body.away_team || body.away, { maxLength: 80 }),
     opponentLogoUrl: sanitizeNullableText(body.opponent_logo_url || body.opponentLogo, { maxLength: 60000 }),
     whatsappUrl: sanitizeNullableText(body.whatsapp_url || body.whatsappUrl, { maxLength: 1200 }),

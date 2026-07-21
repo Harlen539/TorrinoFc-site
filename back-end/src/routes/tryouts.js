@@ -37,9 +37,7 @@ function validateTryoutPayload(body) {
 
   if (!sanitizeText(body.title || body.fullName, { maxLength: 120 }) && players.length === 0) errors.push('Informe pelo menos um jogador para a peneira.');
   if (!parseDateInput(body.tryout_date || body.date)) errors.push('Data da peneira precisa estar no formato YYYY-MM-DD.');
-  if (body.tryout_time || body.time) {
-    if (!parseTimeInput(body.tryout_time || body.time)) errors.push('Horario da peneira precisa estar no formato HH:mm.');
-  }
+  if (!parseTimeInput(body.tryout_time || body.time)) errors.push('Horario da peneira precisa estar no formato HH:mm.');
 
   return errors;
 }

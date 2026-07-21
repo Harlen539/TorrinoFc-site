@@ -196,15 +196,18 @@ export async function syncSupabaseAuthUsersToDatabase(client = prisma) {
           include: { playerProfile: true },
         });
 
-      await ensurePlayerForUser(tx, profile, {
-        name: authPlayer.fullName,
-        nickname: authPlayer.nickname,
-        position: authPlayer.position,
-        shirt: authPlayer.shirt,
-        avatarUrl: authPlayer.avatar,
-        photo: authPlayer.photo,
-        bio: authPlayer.bio,
-      });
+      const shouldHavePlayer = !existing || profile.role !== 'admin' || Boolean(profile.playerProfile);
+      if (shouldHavePlayer) {
+        await ensurePlayerForUser(tx, profile, {
+          name: authPlayer.fullName,
+          nickname: authPlayer.nickname,
+          position: authPlayer.position,
+          shirt: authPlayer.shirt,
+          avatarUrl: authPlayer.avatar,
+          photo: authPlayer.photo,
+          bio: authPlayer.bio,
+        });
+      }
 
       if (makeFounder) hasAdmin = true;
       synced += 1;
