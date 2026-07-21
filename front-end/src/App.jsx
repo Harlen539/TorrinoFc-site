@@ -92,6 +92,9 @@ const initialMatches = [];
 
 const initialTryouts = [];
 
+const localUsersKey = 'torinnofc-users-cache';
+const localPlayersKey = 'torinnofc-players-cache';
+
 const navItems = [
   { id: 'dashboard', label: 'Painel', icon: Home },
   { id: 'profile', label: 'Meu Perfil', icon: User },
@@ -327,11 +330,21 @@ function makeCalendarDays(monthDate) {
 }
 
 function readSavedUsers() {
-  return initialUsers;
+  try {
+    const saved = JSON.parse(localStorage.getItem(localUsersKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizeUser) : initialUsers;
+  } catch {
+    return initialUsers;
+  }
 }
 
 function readSavedPlayers() {
-  return initialPlayers;
+  try {
+    const saved = JSON.parse(localStorage.getItem(localPlayersKey) || '[]');
+    return Array.isArray(saved) ? saved.map(normalizePlayer) : initialPlayers;
+  } catch {
+    return initialPlayers;
+  }
 }
 
 function readSavedMatches() {
@@ -425,6 +438,55 @@ function normalizePlayer(player) {
   };
 }
 
+function makePlayerFromUser(user) {
+  const normalized = normalizeUser(user);
+  const id = normalized.playerId || `local-player-${normalizeEmail(normalized.email) || normalized.id}`;
+  return normalizePlayer({
+    id,
+    userId: normalized.id,
+    fullName: normalized.name,
+    nickname: normalized.nickname,
+    position: normalized.position,
+    shirt: normalized.shirt,
+    avatar: getInitials(normalized.nickname || normalized.name),
+    photo: normalized.photo,
+    status: 'Ativo',
+    stats: {},
+  });
+}
+
+function mergePlayers(...groups) {
+  const map = new Map();
+
+  for (const group of groups) {
+    for (const item of group || []) {
+      const player = normalizePlayer(item);
+      const key = player.userId || player.id;
+      const existingKey = [...map.entries()].find(([, saved]) => (
+        saved.id === player.id
+        || (saved.userId && player.userId && saved.userId === player.userId)
+      ))?.[0] || key;
+      map.set(existingKey, { ...map.get(existingKey), ...player });
+    }
+  }
+
+  return [...map.values()];
+}
+
+function mergeUsers(...groups) {
+  const map = new Map();
+
+  for (const group of groups) {
+    for (const item of group || []) {
+      const user = normalizeUser(item);
+      const key = normalizeEmail(user.email) || user.id;
+      map.set(key, { ...map.get(key), ...user });
+    }
+  }
+
+  return [...map.values()];
+}
+
 function publicUser(user) {
   const normalized = normalizeUser(user);
   const safeUser = { ...normalized };
@@ -458,6 +520,14 @@ function App() {
   const [selectedPlayerId, setSelectedPlayerId] = useState(1);
   const [toast, setToast] = useState('');
   const [celebrating, setCelebrating] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(localUsersKey, JSON.stringify(users));
+  }, [users]);
+
+  useEffect(() => {
+    localStorage.setItem(localPlayersKey, JSON.stringify(players));
+  }, [players]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBooting(false), 1850);
@@ -496,18 +566,21 @@ function App() {
       setChampionships(championshipsResult.value);
     }
     if (playersResult.status === 'fulfilled') {
-      setPlayers(playersResult.value.map(normalizePlayer));
+      const cachedPlayers = readSavedPlayers();
+      setPlayers(mergePlayers(cachedPlayers, playersResult.value.map(normalizePlayer)));
     }
     if (tryoutsResult.status === 'fulfilled') {
       setTryouts(tryoutsResult.value.map(normalizeTryout));
     }
     if (usersResult.status === 'fulfilled') {
-      setUsers(usersResult.value.map((user) => normalizeUser({
+      const cachedUsers = readSavedUsers();
+      const serverUsers = usersResult.value.map((user) => normalizeUser({
         ...user,
         id: user.id,
         backendId: user.id,
         role: user.role === 'admin' ? 'admin' : 'player',
-      })));
+      }));
+      setUsers(mergeUsers(cachedUsers, serverUsers));
     }
 
     const failed = results.find((result) => result.status === 'rejected');
@@ -541,6 +614,16 @@ function App() {
       setSession(nextSession);
     }
   }, [users, session]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (findPlayerForUser(session, players)) return;
+
+    const fallbackPlayer = makePlayerFromUser(session);
+    setPlayers((items) => mergePlayers([fallbackPlayer], items));
+    setUsers((items) => mergeUsers(items, [{ ...session, playerId: fallbackPlayer.id, hasPlayerProfile: true }]));
+    setSession((current) => current ? { ...current, playerId: fallbackPlayer.id, hasPlayerProfile: true } : current);
+  }, [session?.id, session?.email, players]);
 
   useEffect(() => {
     if (session) {
@@ -661,6 +744,8 @@ function App() {
       shirt: metadata.shirt || existing?.shirt || '10',
     });
 
+    let syncedPlayer = null;
+
     try {
       const synced = await apiSyncUser(user);
       user = normalizeUser({
@@ -673,22 +758,21 @@ function App() {
         hasPlayerProfile: Boolean(synced.playerId),
       });
       if (synced.player) {
-        setPlayers((items) => {
-          const normalized = normalizePlayer(synced.player);
-          return items.some((item) => item.id === normalized.id)
-            ? items.map((item) => (item.id === normalized.id ? normalized : item))
-            : [normalized, ...items];
-        });
+        syncedPlayer = normalizePlayer(synced.player);
       }
     } catch {
       // Mantem a sessao do Supabase ativa mesmo se o perfil local ainda nao sincronizar.
     }
 
-    if (existing) {
-      setUsers((items) => items.map((item) => (item.email.toLowerCase() === email ? user : item)));
-    } else {
-      setUsers((items) => [...items, user]);
+    if (!syncedPlayer) {
+      syncedPlayer = makePlayerFromUser(user);
+      user.playerId = syncedPlayer.id;
+      user.hasPlayerProfile = true;
     }
+
+    setPlayers((items) => mergePlayers([syncedPlayer], items));
+
+    setUsers((items) => mergeUsers(items, [user]));
 
     setSession(publicUser(user));
     await refreshClubData({ silent: true });
@@ -740,6 +824,7 @@ function App() {
             shirt: metadata.shirt || form.shirt,
           });
 
+          let syncedPlayer = null;
           try {
             const synced = await apiSyncUser(user);
             user.id = synced.id;
@@ -749,13 +834,16 @@ function App() {
             user.playerId = synced.playerId;
             user.hasPlayerProfile = Boolean(synced.playerId);
             if (synced.player) {
-              setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
+              syncedPlayer = normalizePlayer(synced.player);
             }
           } catch {
-            return { error: 'Conta criada, mas o perfil ainda nao foi sincronizado com o elenco. Aguarde alguns segundos e tente entrar novamente.' };
+            syncedPlayer = makePlayerFromUser(user);
+            user.playerId = syncedPlayer.id;
+            user.hasPlayerProfile = true;
           }
 
-          setUsers((items) => [...items, user]);
+          setPlayers((items) => mergePlayers([syncedPlayer || makePlayerFromUser(user)], items));
+          setUsers((items) => mergeUsers(items, [user]));
           setSession(publicUser(user));
           await refreshClubData({ silent: true });
           setView('dashboard');
@@ -776,6 +864,7 @@ function App() {
       });
 
       let userWithPlayer = { ...user };
+      let syncedPlayer = null;
       try {
         const synced = await apiSyncUser(userWithPlayer);
         userWithPlayer = normalizeUser({
@@ -788,13 +877,16 @@ function App() {
           hasPlayerProfile: Boolean(synced.playerId),
         });
         if (synced.player) {
-          setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
+          syncedPlayer = normalizePlayer(synced.player);
         }
       } catch {
-        return { error: 'Nao foi possivel sincronizar o usuario com o elenco. Confira o backend e tente novamente.' };
+        syncedPlayer = makePlayerFromUser(userWithPlayer);
+        userWithPlayer.playerId = syncedPlayer.id;
+        userWithPlayer.hasPlayerProfile = true;
       }
 
-      setUsers((items) => [...items, userWithPlayer]);
+      setPlayers((items) => mergePlayers([syncedPlayer || makePlayerFromUser(userWithPlayer)], items));
+      setUsers((items) => mergeUsers(items, [userWithPlayer]));
       setSession(publicUser(userWithPlayer));
       await refreshClubData({ silent: true });
       setView('dashboard');
