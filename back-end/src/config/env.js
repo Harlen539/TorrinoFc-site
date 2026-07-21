@@ -2,6 +2,18 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+function supabaseUrlFromJwks() {
+  const jwksUrl = process.env.SUPABASE_JWKS_URL || '';
+  if (!jwksUrl) return '';
+
+  try {
+    const url = new URL(jwksUrl);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '';
+  }
+}
+
 export const env = {
   port: Number(process.env.PORT || 4000),
   corsOrigins: [
@@ -17,9 +29,9 @@ export const env = {
   adminApiKey: process.env.ADMIN_API_KEY || '',
   databaseUrl: process.env.DATABASE_URL || '',
   supabase: {
-    url: process.env.SUPABASE_URL || '',
-    publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
-    secretKey: process.env.SUPABASE_SECRET_KEY || '',
+    url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || supabaseUrlFromJwks(),
+    publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '',
+    secretKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SECRET || '',
     jwksUrl: process.env.SUPABASE_JWKS_URL || '',
   },
   whatsapp: {
