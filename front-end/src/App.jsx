@@ -1572,30 +1572,28 @@ function App() {
 }
 
 function Preloader() {
-  const [isLeaving, setIsLeaving] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setIsLeaving(true), 1350);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   return (
-    <main className={`preloader ${isLeaving ? 'leaving' : ''}`}>
+    <main className="preloader">
       <img className="preloader-bg" src={banner} alt="" />
       <section className="preloader-content">
         <div className="crest-stage">
           <img src={logo} alt="TorinnoFC" />
         </div>
 
-        <span className="preloader-kicker">EA SPORTS FC | PRO CLUBS</span>
+        <span className="preloader-kicker">
+          <Sparkles size={16} />
+          Est. 2026 | Plataforma oficial
+        </span>
         <h1>
-          TorinnoFC
+          Torinno FC
         </h1>
-        <p>Digital</p>
-
-        <div className="loading-bar" aria-hidden="true">
-          <div className="bar-shine" />
-          <div className="bar-fill" />
+        <p>Joga bonito, compete serio, representa sempre.</p>
+        <div className="preloader-actions" aria-hidden="true">
+          <span className="preloader-button primary">
+            Entrar na Plataforma
+            <ChevronRight size={16} />
+          </span>
+          <span className="preloader-button secondary">Cadastrar Jogador</span>
         </div>
       </section>
     </main>

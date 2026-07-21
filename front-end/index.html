@@ -76,15 +76,16 @@
       }
       .vercel-cover section {
         display: grid;
-        gap: 12px;
+        gap: 14px;
+        max-width: 720px;
       }
       .vercel-cover section > img {
-        width: clamp(72px, 9vw, 118px);
+        width: 92px;
         height: auto;
+        margin-bottom: 76px;
         filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.55));
       }
-      .vercel-cover span,
-      .vercel-cover p {
+      .vercel-cover span {
         margin: 0;
         color: #d4a24c;
         font-size: 12px;
@@ -94,21 +95,67 @@
       }
       .vercel-cover h1 {
         margin: 0;
-        font-size: 128px;
-        line-height: 0.82;
+        color: #f8fafc;
+        font-family: "Bebas Neue", Arial, sans-serif;
+        font-size: 112px;
+        font-weight: 900;
+        line-height: 0.9;
         letter-spacing: 0;
       }
+      .vercel-cover p {
+        max-width: 620px;
+        margin: 0;
+        color: #f8fafc;
+        font-size: 17px;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+      .vercel-cover-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      .vercel-cover-actions b {
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 900;
+      }
+      .vercel-cover-actions b:first-child {
+        color: #130b04;
+        background: linear-gradient(135deg, #f5c96f, #eda414);
+      }
+      .vercel-cover-actions b:last-child {
+        color: #d4a24c;
+        border: 1px solid rgba(212, 162, 76, 0.28);
+        background: rgba(255, 255, 255, 0.025);
+      }
       @media (max-width: 900px) {
+        .vercel-cover section > img {
+          margin-bottom: 54px;
+        }
         .vercel-cover h1 {
-          font-size: 96px;
+          font-size: 88px;
         }
       }
       @media (max-width: 640px) {
         .vercel-cover {
           padding: 34px 20px;
         }
+        .vercel-cover section > img {
+          width: 82px;
+          margin-bottom: 34px;
+        }
         .vercel-cover h1 {
-          font-size: 68px;
+          font-size: 62px;
+        }
+        .vercel-cover p {
+          font-size: 14px;
         }
       }
     </style>
@@ -119,9 +166,13 @@
         <img src="/assets/banner-torrino.png" alt="" />
         <section>
           <img src="/assets/logo-torrino.png" alt="TorinnoFC" />
-          <span>EA SPORTS FC | PRO CLUBS</span>
-          <h1>TorinnoFC</h1>
-          <p>Digital</p>
+          <span>✦ Est. 2026 | Plataforma oficial</span>
+          <h1>Torinno FC</h1>
+          <p>Joga bonito, compete serio, representa sempre.</p>
+          <div class="vercel-cover-actions" aria-hidden="true">
+            <b>Entrar na Plataforma ›</b>
+            <b>Cadastrar Jogador</b>
+          </div>
         </section>
       </main>
     </div>

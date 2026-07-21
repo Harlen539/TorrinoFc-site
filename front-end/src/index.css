@@ -109,7 +109,6 @@ img {
   padding: clamp(28px, 6vw, 76px);
   background: #05070a;
   isolation: isolate;
-  transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
 }
 
 .preloader::after {
@@ -133,18 +132,12 @@ img {
   transform: scale(1.02);
 }
 
-.preloader.leaving {
-  opacity: 0;
-  transform: scale(0.985);
-  filter: blur(2px);
-}
-
 .preloader-content {
   position: relative;
   z-index: 2;
-  width: min(760px, 100%);
+  width: min(720px, 100%);
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-items: start;
   text-align: left;
   padding: 0;
@@ -152,7 +145,7 @@ img {
 
 .crest-stage {
   position: relative;
-  margin-bottom: 8px;
+  margin-bottom: 76px;
   opacity: 0;
   animation: minimalLogoIn 0.55s ease forwards;
 }
@@ -160,7 +153,7 @@ img {
 .crest-stage img {
   position: relative;
   z-index: 1;
-  width: clamp(82px, 9vw, 126px);
+  width: 92px;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.4));
   animation: minimalFloat 1.7s ease-in-out infinite;
 }
@@ -169,15 +162,18 @@ img {
   margin: 0;
   color: var(--text);
   font-family: "Bebas Neue", Inter, sans-serif;
-  font-size: 128px;
+  font-size: 112px;
   font-weight: 900;
   letter-spacing: 0;
-  line-height: 0.82;
+  line-height: 0.9;
   opacity: 0;
   animation: minimalFadeUp 0.55s ease 0.12s forwards;
 }
 
 .preloader-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--gold);
   font-size: 12px;
   font-weight: 900;
@@ -187,48 +183,47 @@ img {
   animation: minimalFadeUp 0.55s ease 0.08s forwards;
 }
 
-.loading-dots {
-  display: inline-block;
-  width: 0;
-  overflow: hidden;
-  vertical-align: bottom;
-  animation: dots 1.2s steps(4, end) infinite;
-}
-
-.loading-bar {
-  position: relative;
-  width: min(320px, 100%);
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.bar-fill {
-  height: 100%;
-  width: 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--gold), var(--orange));
-  animation: loadingProgress 1.35s cubic-bezier(0.22, 0.9, 0.32, 1) forwards;
-}
-
-.bar-shine {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-  animation: barShine 1.2s linear infinite;
-}
-
 .preloader p {
-  margin: -4px 0 6px;
-  color: var(--gold);
-  font-size: 0.78rem;
+  max-width: 620px;
+  margin: 0;
+  color: #f8fafc;
+  font-size: 17px;
   font-weight: 900;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   opacity: 0;
   animation: minimalFadeUp 0.55s ease 0.22s forwards;
+}
+
+.preloader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  opacity: 0;
+  animation: minimalFadeUp 0.55s ease 0.3s forwards;
+}
+
+.preloader-button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.preloader-button.primary {
+  color: #130b04;
+  background: linear-gradient(135deg, #f5c96f, #eda414);
+}
+
+.preloader-button.secondary {
+  color: var(--gold);
+  border: 1px solid rgba(212, 162, 76, 0.28);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .app-error {
@@ -4934,8 +4929,12 @@ section,
 }
 
 @media (max-width: 900px) {
+  .crest-stage {
+    margin-bottom: 54px;
+  }
+
   .preloader h1 {
-    font-size: 96px;
+    font-size: 88px;
   }
 
   .landing {
@@ -5056,6 +5055,14 @@ section,
     padding: 34px 20px;
   }
 
+  .crest-stage {
+    margin-bottom: 34px;
+  }
+
+  .crest-stage img {
+    width: 82px;
+  }
+
   .preloader::after {
     background:
       linear-gradient(180deg, rgba(5, 7, 10, 0.2), rgba(5, 7, 10, 0.78) 48%, rgba(5, 7, 10, 0.97)),
@@ -5067,7 +5074,15 @@ section,
   }
 
   .preloader h1 {
-    font-size: 68px;
+    font-size: 62px;
+  }
+
+  .preloader p {
+    font-size: 14px;
+  }
+
+  .preloader-actions {
+    gap: 8px;
   }
 
   .hero-actions,
