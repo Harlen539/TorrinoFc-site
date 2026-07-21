@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer } from '../lib/serializers.js';
@@ -56,20 +57,118 @@ function makeStatsData(body) {
   };
 }
 
-playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
-  await ensurePlayersForExistingUsers(prisma);
-  await ensureStatsForExistingPlayers(prisma);
+function makeFallbackStats() {
+  return {
+    goals: 0,
+    assists: 0,
+    recoveries: 0,
+    shots: 0,
+    passes: 0,
+    tackles: 0,
+    interceptions: 0,
+    matches: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    yellow: 0,
+    red: 0,
+    rating: 0,
+    notes: '',
+  };
+}
 
-  const players = await prisma.playerProfile.findMany({
-    where: {
-      teamName: 'Torinno FC',
-      status: { not: 'Removido' },
-    },
-    include: { stats: true },
-    orderBy: [{ createdAt: 'desc' }],
+function authUserToPlayer(user) {
+  const metadata = user.user_metadata || {};
+  const fullName = sanitizeText(metadata.name || metadata.fullName || user.email?.split('@')[0], {
+    maxLength: 120,
+    fallback: 'Jogador TorinnoFC',
   });
+  const nickname = sanitizeText(metadata.nickname || fullName, {
+    maxLength: 80,
+    fallback: fullName,
+  });
+  const shirt = Math.min(numberOrZero(metadata.shirt || metadata.shirtNumber || 10), 999);
 
-  response.json({ players: players.map(serializePlayer) });
+  return {
+    id: `auth-player-${user.id}`,
+    userId: user.id,
+    fullName,
+    nickname,
+    position: sanitizeText(metadata.position, { maxLength: 60, fallback: 'Meio-campo' }),
+    shirt,
+    foot: '',
+    status: 'Ativo',
+    role: 'Jogador',
+    avatar: sanitizeNullableText(metadata.avatarUrl || metadata.avatar_url, { maxLength: 1200 }) || '',
+    photo: sanitizeNullableText(metadata.photo || metadata.photoUrl || metadata.avatarUrl, { maxLength: 1200 }) || '',
+    bio: sanitizeNullableText(metadata.bio, { maxLength: 700 }) || 'Jogador cadastrado na plataforma TorinnoFC.',
+    instagram: '',
+    localOnly: true,
+    source: 'supabase-auth',
+    createdAt: user.created_at || new Date().toISOString(),
+    updatedAt: user.updated_at || user.last_sign_in_at || user.created_at || new Date().toISOString(),
+    stats: makeFallbackStats(),
+  };
+}
+
+export async function fetchSupabaseAuthPlayers() {
+  if (!env.supabase.url || !env.supabase.secretKey) {
+    return [];
+  }
+
+  const baseUrl = env.supabase.url.replace(/\/$/, '');
+  const perPage = 200;
+  const users = [];
+
+  for (let page = 1; page <= 25; page += 1) {
+    const response = await fetch(`${baseUrl}/auth/v1/admin/users?page=${page}&per_page=${perPage}`, {
+      headers: {
+        apikey: env.supabase.secretKey,
+        Authorization: `Bearer ${env.supabase.secretKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.msg || payload.error || 'Nao foi possivel listar usuarios do Supabase Auth.');
+    }
+
+    const payload = await response.json();
+    const pageUsers = Array.isArray(payload.users) ? payload.users : [];
+    users.push(...pageUsers);
+    if (pageUsers.length < perPage) break;
+  }
+
+  return users
+    .filter((user) => user?.id && user.email && !user.deleted_at)
+    .map(authUserToPlayer);
+}
+
+playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
+  try {
+    await ensurePlayersForExistingUsers(prisma);
+    await ensureStatsForExistingPlayers(prisma);
+
+    const players = await prisma.playerProfile.findMany({
+      where: {
+        teamName: 'Torinno FC',
+        status: { not: 'Removido' },
+      },
+      include: { stats: true },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    response.json({ players: players.map(serializePlayer), source: 'database' });
+  } catch (error) {
+    console.error('[players] Banco indisponivel; usando fallback do Supabase Auth:', error);
+    const players = await fetchSupabaseAuthPlayers();
+    response.set('x-data-source', 'supabase-auth-fallback');
+    response.json({
+      players,
+      source: 'supabase-auth-fallback',
+      warning: 'Banco indisponivel. Exibindo cadastros do Supabase Auth ate o Postgres voltar.',
+    });
+  }
 }));
 
 playersRouter.post('/api/players', requirePermission('createPlayer'), asyncRoute(async (request, response) => {

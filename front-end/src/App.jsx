@@ -2833,6 +2833,25 @@ function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify
                 profileUpdate: true,
               };
 
+              let metadataSynced = false;
+              if (hasSupabaseConfig) {
+                try {
+                  const { error } = await supabase.auth.updateUser({
+                    data: {
+                      name: nextUser.name,
+                      nickname: nextUser.nickname,
+                      position: nextUser.position,
+                      shirt: nextUser.shirt,
+                      bio: nextUser.bio,
+                      photo: nextUser.photo,
+                    },
+                  });
+                  metadataSynced = !error;
+                } catch {
+                  metadataSynced = false;
+                }
+              }
+
               try {
                 const synced = await apiSyncUser(nextUser);
                 const savedUser = normalizeUser({
@@ -2858,7 +2877,28 @@ function Profile({ user, setUser, setUsers, players, setPlayers, setView, notify
                 setEditing(false);
                 notify('Perfil salvo e sincronizado com o elenco.');
               } catch (error) {
-                notify(error.message || 'Nao foi possivel salvar o perfil no servidor.');
+                const savedUser = normalizeUser({ ...nextUser, localOnly: true });
+                const fallbackPlayer = normalizePlayer({
+                  ...(linkedPlayer || makePlayerFromUser(savedUser)),
+                  userId: savedUser.id,
+                  fullName: savedUser.name,
+                  nickname: savedUser.nickname,
+                  position: savedUser.position,
+                  shirt: savedUser.shirt,
+                  bio: savedUser.bio,
+                  photo: savedUser.photo,
+                  localOnly: true,
+                });
+                savedUser.playerId = fallbackPlayer.id;
+                savedUser.hasPlayerProfile = true;
+                setUser(publicUser(savedUser));
+                setUsers((items) => mergeUsers(items, [savedUser]));
+                setPlayers((items) => mergePlayers([fallbackPlayer], items));
+                await refreshClubData?.({ silent: true });
+                setEditing(false);
+                notify(metadataSynced
+                  ? 'Perfil salvo no Supabase. O banco sincroniza quando voltar.'
+                  : error.message || 'Perfil salvo neste aparelho. O banco ainda nao respondeu.');
               }
             }}
           >
