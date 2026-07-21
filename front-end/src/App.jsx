@@ -95,6 +95,8 @@ const initialTryouts = [];
 const navItems = [
   { id: 'dashboard', label: 'Painel', icon: Home },
   { id: 'profile', label: 'Meu Perfil', icon: User },
+  { id: 'settings', label: 'Configuracoes', icon: Settings },
+  { id: 'logout', label: 'Sair', icon: LogOut },
   { id: 'performance', label: 'Meu Desempenho', icon: Activity },
   { id: 'players', label: 'Jogadores', icon: Users },
   { id: 'tryouts', label: 'Peneiras', icon: UserPlus },
@@ -107,8 +109,6 @@ const navItems = [
   { id: 'team', label: 'Time', icon: Shield },
   { id: 'championships', label: 'Campeonatos', icon: Crown },
   { id: 'admin', label: 'Admin', icon: ShieldCheck },
-  { id: 'settings', label: 'Configuracoes', icon: Settings },
-  { id: 'logout', label: 'Sair', icon: LogOut },
 ];
 
 const positions = [
