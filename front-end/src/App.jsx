@@ -107,6 +107,7 @@ const navItems = [
   { id: 'championships', label: 'Campeonatos', icon: Crown },
   { id: 'admin', label: 'Admin', icon: ShieldCheck },
   { id: 'settings', label: 'Configuracoes', icon: Settings },
+  { id: 'logout', label: 'Sair', icon: LogOut },
 ];
 
 const positions = [
@@ -472,47 +473,58 @@ function App() {
     }
   }, []);
 
+  const refreshClubData = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setServerState({ loading: true, error: '' });
+    }
+
+    const results = await Promise.allSettled([
+      fetchMatches(),
+      fetchChampionships(),
+      fetchPlayers(),
+      fetchTryouts(),
+      fetchUsers(),
+    ]);
+
+    const [matchesResult, championshipsResult, playersResult, tryoutsResult, usersResult] = results;
+
+    if (matchesResult.status === 'fulfilled') {
+      setMatches(matchesResult.value.map(normalizeMatchEvent));
+    }
+    if (championshipsResult.status === 'fulfilled') {
+      setChampionships(championshipsResult.value);
+    }
+    if (playersResult.status === 'fulfilled') {
+      setPlayers(playersResult.value.map(normalizePlayer));
+    }
+    if (tryoutsResult.status === 'fulfilled') {
+      setTryouts(tryoutsResult.value.map(normalizeTryout));
+    }
+    if (usersResult.status === 'fulfilled') {
+      setUsers(usersResult.value.map((user) => normalizeUser({
+        ...user,
+        id: user.id,
+        backendId: user.id,
+        role: user.role === 'admin' ? 'admin' : 'player',
+      })));
+    }
+
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) {
+      const message = failed.reason?.message || 'Alguns dados ainda nao foram sincronizados pelo servidor.';
+      setServerState({ loading: false, error: message });
+      return false;
+    }
+
+    setServerState({ loading: false, error: '' });
+    return true;
+  };
+
   useEffect(() => {
-    let active = true;
-
-    const loadServerData = async ({ silent = false } = {}) => {
-      if (!silent) {
-        setServerState({ loading: true, error: '' });
-      }
-
-      try {
-        const [nextMatches, nextChampionships, nextPlayers, nextTryouts, nextUsers] = await Promise.all([
-          fetchMatches(),
-          fetchChampionships(),
-          fetchPlayers(),
-          fetchTryouts(),
-          fetchUsers().catch(() => []),
-        ]);
-
-        if (!active) return;
-
-        setMatches(nextMatches.map(normalizeMatchEvent));
-        setChampionships(nextChampionships);
-        setPlayers(nextPlayers.map(normalizePlayer));
-        setTryouts(nextTryouts.map(normalizeTryout));
-        setUsers(nextUsers.map((user) => normalizeUser({
-          ...user,
-          id: user.id,
-          backendId: user.id,
-          role: user.role === 'admin' ? 'admin' : 'player',
-        })));
-        setServerState({ loading: false, error: '' });
-      } catch (error) {
-        if (!active) return;
-        setServerState({ loading: false, error: error.message || 'Nao foi possivel carregar dados do servidor.' });
-      }
-    };
-
-    loadServerData();
-    const timer = window.setInterval(() => loadServerData({ silent: true }), 5000);
+    refreshClubData();
+    const timer = window.setInterval(() => refreshClubData({ silent: true }), 5000);
 
     return () => {
-      active = false;
       window.clearInterval(timer);
     };
   }, []);
@@ -671,6 +683,7 @@ function App() {
     }
 
     setSession(publicUser(user));
+    await refreshClubData({ silent: true });
     setView('dashboard');
     return { ok: true };
   };
@@ -731,11 +744,12 @@ function App() {
               setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
             }
           } catch {
-            return { error: 'Conta criada, mas nao foi possivel salvar o perfil no banco. Tente entrar novamente em alguns segundos.' };
+            return { error: 'Conta criada, mas o perfil ainda nao foi sincronizado com o elenco. Aguarde alguns segundos e tente entrar novamente.' };
           }
 
           setUsers((items) => [...items, user]);
           setSession(publicUser(user));
+          await refreshClubData({ silent: true });
           setView('dashboard');
           return { ok: true };
         }
@@ -769,11 +783,12 @@ function App() {
           setPlayers((items) => [normalizePlayer(synced.player), ...items.filter((item) => item.id !== synced.player.id)]);
         }
       } catch {
-        return { error: 'Nao foi possivel salvar o usuario no banco. Verifique o backend e tente novamente.' };
+        return { error: 'Nao foi possivel sincronizar o usuario com o elenco. Confira o backend e tente novamente.' };
       }
 
       setUsers((items) => [...items, userWithPlayer]);
       setSession(publicUser(userWithPlayer));
+      await refreshClubData({ silent: true });
       setView('dashboard');
       return { ok: true };
     }
@@ -816,12 +831,14 @@ function App() {
         ? items.map((item) => (item.id === existingId ? normalized : item))
         : [...items, normalized];
     });
+    await refreshClubData({ silent: true });
     return saved;
   };
 
   const removeMatch = async (matchId) => {
     await apiDeleteMatch(matchId);
     setMatches((items) => items.filter((match) => match.id !== matchId));
+    await refreshClubData({ silent: true });
   };
 
   const saveChampionship = async (championship, existingId) => {
@@ -833,29 +850,34 @@ function App() {
         ? items.map((item) => (item.id === existingId ? saved : item))
         : [saved, ...items]
     ));
+    await refreshClubData({ silent: true });
     return saved;
   };
 
   const removeChampionship = async (championshipId) => {
     await apiDeleteChampionship(championshipId);
     setChampionships((items) => items.filter((championship) => championship.id !== championshipId));
+    await refreshClubData({ silent: true });
   };
 
   const createPlayer = async (player) => {
     const saved = await apiCreatePlayer(player);
     setPlayers((items) => [normalizePlayer(saved), ...items]);
+    await refreshClubData({ silent: true });
     return saved;
   };
 
   const updatePlayerStats = async (playerId, stats) => {
     const saved = await apiUpdatePlayerStats(playerId, stats);
     setPlayers((items) => items.map((player) => (player.id === playerId ? normalizePlayer(saved) : player)));
+    await refreshClubData({ silent: true });
     return saved;
   };
 
   const removePlayer = async (playerId) => {
     await apiDeletePlayer(playerId);
     setPlayers((items) => items.filter((player) => player.id !== playerId));
+    await refreshClubData({ silent: true });
   };
 
   const setUserRole = async (account, nextRole) => {
@@ -886,6 +908,7 @@ function App() {
         setView('dashboard');
       }
     }
+    await refreshClubData({ silent: true });
     return updated;
   };
 
@@ -922,6 +945,7 @@ function App() {
     if (!session?.email) return;
     const saved = await updateNotificationPreferences(session.email, preferences);
     setNotificationPreferences(saved);
+    await refreshClubData({ silent: true });
     notify('Preferencias de notificacoes atualizadas.');
   };
 
@@ -1023,6 +1047,7 @@ function App() {
         refreshNotifications={refreshNotifications}
         notificationPreferences={notificationPreferences}
         saveNotificationPreferences={saveNotificationPreferences}
+        refreshClubData={refreshClubData}
         activities={activities}
         achievements={achievements}
         tryouts={tryouts}
@@ -1266,7 +1291,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
   );
 }
 
-function DashboardShell({ children, user, view, setView, onLogout, onLogoutAllDevices, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
+function DashboardShell({ children, user, view, setView, notificationsState, markNotificationRead, markAllNotificationsRead, refreshNotifications }) {
   const [open, setOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const unreadCount = notificationsState?.unreadCount || 0;
@@ -1314,16 +1339,6 @@ function DashboardShell({ children, user, view, setView, onLogout, onLogoutAllDe
           })}
         </nav>
 
-        <div className="sidebar-session-actions">
-          <button className="logout-button" type="button" onClick={() => onLogout()}>
-            <LogOut size={18} />
-            Sair
-          </button>
-          <button className="logout-button subtle" type="button" onClick={() => onLogoutAllDevices()}>
-            <ShieldCheck size={18} />
-            Sair de todos
-          </button>
-        </div>
       </aside>
 
       <section className="content-area">
@@ -1334,16 +1349,6 @@ function DashboardShell({ children, user, view, setView, onLogout, onLogoutAllDe
           <div>
             <span>TorinnoFC</span>
             <strong>{pageTitle(view)}</strong>
-          </div>
-          <div className="topbar-session-actions">
-            <button className="button minimal small" type="button" onClick={() => onLogout()}>
-              <LogOut size={15} />
-              Sair
-            </button>
-            <button className="button secondary small" type="button" onClick={() => onLogoutAllDevices()}>
-              <ShieldCheck size={15} />
-              Todos dispositivos
-            </button>
           </div>
           <div className="notification-wrap">
             <button className={`notification ${unreadCount > 0 ? 'has-unread' : ''}`} type="button" onClick={() => setNotificationsOpen(!notificationsOpen)} aria-label="Abrir notificacoes">
@@ -1577,9 +1582,70 @@ function PageRouter(props) {
     championships: <Championships {...props} />,
     admin: <AdminPanel {...props} />,
     settings: <SettingsPage {...props} />,
+    logout: <LogoutPage {...props} />,
   };
 
   return <div className="page-transition" key={view}>{pages[view] || <Dashboard {...props} />}</div>;
+}
+
+function LogoutPage({ user, onLogout, onLogoutAllDevices, onSwitchAccount }) {
+  return (
+    <section className="logout-page">
+      <SectionHeader eyebrow="Conta" title="Sair da conta" />
+      <div className="logout-grid">
+        <article className="panel logout-account-card">
+          <div className="avatar">{getInitials(user.nickname || user.name)}</div>
+          <div className="logout-account-copy">
+            <strong>{user.name || user.nickname || 'Usuario TorinnoFC'}</strong>
+            <span>{user.email}</span>
+            <small>{user.staffRole || roleLabel(user.role)}</small>
+          </div>
+        </article>
+
+        <article className="panel logout-action-card">
+          <div className="logout-action-copy">
+            <UserPlus size={20} />
+            <div>
+              <strong>Trocar conta</strong>
+              <span>Fecha esta sessao e abre a tela de login para entrar com outro e-mail.</span>
+            </div>
+          </div>
+          <button className="button secondary" type="button" onClick={() => onSwitchAccount()}>
+            <UserPlus size={16} />
+            Trocar conta
+          </button>
+        </article>
+
+        <article className="panel logout-action-card">
+          <div className="logout-action-copy">
+            <LogOut size={20} />
+            <div>
+              <strong>Sair desta conta</strong>
+              <span>Sai apenas deste aparelho e mantem outros dispositivos conectados.</span>
+            </div>
+          </div>
+          <button className="button primary" type="button" onClick={() => onLogout()}>
+            <LogOut size={16} />
+            Sair
+          </button>
+        </article>
+
+        <article className="panel logout-action-card danger">
+          <div className="logout-action-copy">
+            <ShieldCheck size={20} />
+            <div>
+              <strong>Sair de todos os dispositivos</strong>
+              <span>Encerra a sessao da conta em todos os lugares conectados pelo Supabase.</span>
+            </div>
+          </div>
+          <button className="button minimal danger" type="button" onClick={() => onLogoutAllDevices()}>
+            <ShieldCheck size={16} />
+            Sair de todos
+          </button>
+        </article>
+      </div>
+    </section>
+  );
 }
 
 function Dashboard({ user, players, matches, championships = [], setView, notify, activities = [] }) {
@@ -2096,7 +2162,7 @@ function ApexChart({ options, className = '' }) {
   );
 }
 
-function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify, onLogout, onSwitchAccount }) {
+function Profile({ user, setUser, users, setUsers, players, setPlayers, setView, notify }) {
   const linkedPlayer = findPlayerForUser(user, players);
   const base = linkedPlayer || {
     id: null,
@@ -2177,14 +2243,6 @@ function Profile({ user, setUser, users, setUsers, players, setPlayers, setView,
         <button className="button secondary" type="button" onClick={() => setEditing(!editing)}>
           <Edit3 size={16} />
           Editar perfil
-        </button>
-        <button className="button minimal" type="button" onClick={() => onSwitchAccount()}>
-          <UserPlus size={16} />
-          Trocar conta
-        </button>
-        <button className="button minimal danger" type="button" onClick={() => onLogout()}>
-          <LogOut size={16} />
-          Sair
         </button>
       </div>
 
@@ -2419,7 +2477,7 @@ function emptyPerformanceForm(matchId = '') {
   };
 }
 
-function Performance({ user, players, setPlayers, matches, notify }) {
+function Performance({ user, players, setPlayers, matches, notify, refreshClubData }) {
   const linkedPlayer = findPlayerForUser(user, players);
   const [player, setPlayer] = useState(linkedPlayer);
   const [performances, setPerformances] = useState([]);
@@ -2504,6 +2562,7 @@ function Performance({ user, players, setPlayers, matches, notify }) {
       setPlayer(normalizedPlayer);
       setPlayers((items) => items.map((item) => (item.id === normalizedPlayer.id ? normalizedPlayer : item)));
       await reloadPerformance();
+      await refreshClubData?.({ silent: true });
       setForm(emptyPerformanceForm(availableMatches[0]?.id || ''));
       setEditingId('');
       notify('Desempenho salvo no banco.');
@@ -2539,6 +2598,7 @@ function Performance({ user, players, setPlayers, matches, notify }) {
     try {
       await apiDeleteMyPerformance(item.id);
       await reloadPerformance();
+      await refreshClubData?.({ silent: true });
       notify('Desempenho excluido.');
     } catch (apiError) {
       notify(apiError.message || 'Nao foi possivel excluir o desempenho.');
@@ -2749,7 +2809,7 @@ function Players({ players, setView, setSelectedPlayerId }) {
   );
 }
 
-function Tryouts({ user, tryouts, setTryouts, notify }) {
+function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
   const [form, setForm] = useState({
     fullName: '',
     age: '',
@@ -2784,6 +2844,7 @@ function Tryouts({ user, tryouts, setTryouts, notify }) {
       const saved = await apiCreateTryout(tryout);
       const normalized = normalizeTryout(saved);
       setTryouts([normalized, ...tryouts]);
+      await refreshClubData?.({ silent: true });
       openWhatsAppWithPreparedMessage(WHATSAPP_GROUP_INVITE_URL, buildTryoutWhatsAppMessage(normalized), notify);
       notify('Peneira agendada e salva no banco.');
     } catch (error) {
@@ -2807,6 +2868,7 @@ function Tryouts({ user, tryouts, setTryouts, notify }) {
     try {
       const saved = await apiUpdateTryoutStatus(id, status);
       setTryouts(tryouts.map((tryout) => (tryout.id === id ? normalizeTryout(saved) : tryout)));
+      await refreshClubData?.({ silent: true });
       notify(`Teste marcado como ${status.toLowerCase()}.`);
     } catch (error) {
       notify(error.message || 'Nao foi possivel atualizar a peneira.');
@@ -2817,6 +2879,7 @@ function Tryouts({ user, tryouts, setTryouts, notify }) {
     try {
       await apiDeleteTryout(id);
       setTryouts(tryouts.filter((item) => item.id !== id));
+      await refreshClubData?.({ silent: true });
       notify('Teste removido.');
     } catch (error) {
       notify(error.message || 'Nao foi possivel remover a peneira.');
@@ -4000,7 +4063,7 @@ function readAppSettings() {
   }
 }
 
-function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences, onLogout, onLogoutAllDevices, onSwitchAccount }) {
+function SettingsPage({ user, users, setUsers, setUserRole, notify, notificationPreferences, saveNotificationPreferences }) {
   const [settings, setSettings] = useState(readAppSettings);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
@@ -4147,26 +4210,6 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
           </div>
           <span className={`role-badge ${user.role === 'admin' ? 'admin' : 'player'}`}>{user.staffRole || roleLabel(user.role)}</span>
         </div>
-        <div className="panel settings-session-card">
-          <div className="settings-account-copy">
-            <strong>Sessao da conta</strong>
-            <span>Saia para entrar novamente ou trocar de conta. A opcao global encerra a sessao em outros dispositivos conectados.</span>
-          </div>
-          <div className="settings-session-actions">
-            <button className="button secondary" type="button" onClick={() => onSwitchAccount()}>
-              <UserPlus size={16} />
-              Trocar conta
-            </button>
-            <button className="button minimal" type="button" onClick={() => onLogout()}>
-              <LogOut size={16} />
-              Sair
-            </button>
-            <button className="button minimal danger" type="button" onClick={() => onLogoutAllDevices()}>
-              <ShieldCheck size={16} />
-              Sair de todos os dispositivos
-            </button>
-          </div>
-        </div>
         <PasswordChangeCard notify={notify} />
       </SettingsGroup>
 
@@ -4178,7 +4221,7 @@ function SettingsPage({ user, users, setUsers, setUserRole, notify, notification
       </SettingsGroup>
 
       <SettingsGroup title="Preferencias de notificacoes">
-        {!notificationPreferences && <div className="settings-warning">Preferencias indisponiveis enquanto o backend/banco nao responder.</div>}
+        {!notificationPreferences && <div className="settings-warning">Preferencias ainda nao carregadas. Atualize novamente em alguns segundos.</div>}
         {notificationPreferences && (
           <>
             <SettingsItem title="Partidas agendadas" checked={notificationPreferences.matchCreated} onChange={() => saveNotificationPreferences({ ...notificationPreferences, matchCreated: !notificationPreferences.matchCreated })} />
@@ -4501,7 +4544,7 @@ function useCountdown(match) {
   return label;
 }
 
-function Matchday({ user, players, matches, saveMatch, setView, notify }) {
+function Matchday({ user, players, matches, saveMatch, setView, notify, refreshClubData }) {
   const fallbackMatch = matches.find((match) => match.status === 'Em andamento')
     || matches.find((match) => match.status === 'Agendada')
     || matches[0];
@@ -4560,6 +4603,7 @@ function Matchday({ user, players, matches, saveMatch, setView, notify }) {
     try {
       await updateMyAttendance(match.id, { status });
       await load(match.id);
+      await refreshClubData?.({ silent: true });
       notify('Presenca atualizada.');
     } catch (error) {
       notify(error.message || 'Nao foi possivel atualizar presenca.');
@@ -4586,6 +4630,7 @@ function Matchday({ user, players, matches, saveMatch, setView, notify }) {
     try {
       const lineup = await updateMatchLineup(match.id, lineupDraft);
       setMatchday((current) => ({ ...current, lineup }));
+      await refreshClubData?.({ silent: true });
       notify('Escalacao salva.');
     } catch (error) {
       notify(error.message || 'Nao foi possivel salvar escalacao.');
@@ -4599,6 +4644,7 @@ function Matchday({ user, players, matches, saveMatch, setView, notify }) {
     setSaving(true);
     try {
       await saveMatch({ ...match, score: scoreDraft, status: 'Encerrada' }, match.id);
+      await refreshClubData?.({ silent: true });
       notify('Resultado registrado. Vitoria comemorada se o placar favorecer o TorinnoFC.');
     } catch (error) {
       notify(error.message || 'Nao foi possivel salvar resultado.');
@@ -5130,6 +5176,7 @@ function pageTitle(view) {
     championships: 'Campeonatos',
     admin: 'Admin',
     settings: 'Configuracoes',
+    logout: 'Sair da conta',
   };
   return map[view] || 'Painel';
 }

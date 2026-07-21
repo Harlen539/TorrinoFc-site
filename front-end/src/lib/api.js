@@ -52,7 +52,10 @@ async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload.error || payload.errors?.join(' ') || 'Nao foi possivel concluir a operacao.';
+    const fallbackMessage = response.status >= 500
+      ? 'O servidor retornou erro 500. Verifique as variaveis DATABASE_URL/DIRECT_URL e rode as migrations do banco no Render.'
+      : 'Nao foi possivel concluir a operacao.';
+    const message = payload.error || payload.errors?.join(' ') || fallbackMessage;
     throw new Error(message);
   }
 

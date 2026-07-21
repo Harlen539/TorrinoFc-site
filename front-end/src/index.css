@@ -2398,6 +2398,15 @@ textarea {
     display: none;
   }
 
+  .logout-action-card {
+    grid-template-columns: 1fr;
+  }
+
+  .logout-action-card .button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .matchday-hero {
     grid-template-columns: 1fr;
   }
@@ -3721,6 +3730,69 @@ textarea {
   background: rgba(212, 162, 76, 0.08);
   font-size: 12px;
   font-weight: 800;
+}
+
+.logout-page {
+  max-width: 980px;
+}
+
+.logout-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.logout-account-card,
+.logout-action-card {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.logout-account-card {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.logout-action-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.logout-action-card.danger {
+  border-color: rgba(255, 105, 105, 0.3);
+  background: linear-gradient(145deg, rgba(255, 105, 105, 0.08), rgba(12, 14, 20, 0.88));
+}
+
+.logout-account-copy,
+.logout-action-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.logout-action-copy {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.logout-action-copy svg {
+  color: var(--gold);
+}
+
+.logout-account-copy strong,
+.logout-account-copy span,
+.logout-account-copy small,
+.logout-action-copy strong,
+.logout-action-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logout-account-copy span,
+.logout-account-copy small,
+.logout-action-copy span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .permission-grid {

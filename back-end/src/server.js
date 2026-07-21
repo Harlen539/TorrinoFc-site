@@ -14,6 +14,7 @@ import { playersRouter } from './routes/players.js';
 import { settingsRouter } from './routes/settings.js';
 import { tryoutsRouter } from './routes/tryouts.js';
 import { usersRouter } from './routes/users.js';
+import { prisma } from './lib/prisma.js';
 import { startReminderScheduler } from './services/reminderScheduler.js';
 
 const app = express();
@@ -39,6 +40,21 @@ app.use(express.json({ limit: '64kb', strict: true }));
 
 app.get('/health', (_request, response) => {
   response.json({ ok: true, service: 'torinnofc-back-end' });
+});
+
+app.get('/health/db', async (_request, response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    response.json({ ok: true, service: 'torinnofc-back-end', database: 'connected' });
+  } catch (error) {
+    console.error('[health/db] Banco indisponivel:', error);
+    response.status(500).json({
+      ok: false,
+      service: 'torinnofc-back-end',
+      database: 'unavailable',
+      error: 'Banco de dados indisponivel. Confira DATABASE_URL, DIRECT_URL e migrations no Render.',
+    });
+  }
 });
 
 app.use(adminMatchesRouter);
