@@ -814,21 +814,19 @@ function App() {
       setChampionships(mergeById(normalizeChampionshipItem, readSavedChampionships(), championshipsResult.value));
     }
     if (playersResult.status === 'fulfilled') {
-      const cachedPlayers = readSavedPlayers();
-      setPlayers(mergePlayers(cachedPlayers, playersResult.value.map(normalizePlayer)));
+      setPlayers(playersResult.value.map(normalizePlayer));
     }
     if (tryoutsResult.status === 'fulfilled') {
       setTryouts(tryoutsResult.value.map(normalizeTryout));
     }
     if (usersResult.status === 'fulfilled') {
-      const cachedUsers = readSavedUsers();
       const serverUsers = usersResult.value.map((user) => normalizeUser({
         ...user,
         id: user.id,
         backendId: user.id,
         role: user.role === 'admin' ? 'admin' : 'player',
       }));
-      setUsers(mergeUsers(cachedUsers, serverUsers));
+      setUsers(serverUsers);
     }
 
     const failed = results.find((result) => result.status === 'rejected');
