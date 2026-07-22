@@ -46,9 +46,18 @@ createRoot(document.getElementById('root')).render(
 );
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
-      if (import.meta.env.DEV) console.error('[service-worker]', error);
-    });
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch((error) => {
+        if (import.meta.env.DEV) console.error('[service-worker]', error);
+      });
   });
 }

@@ -4,7 +4,7 @@ import { isValidUrl, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeMatch } from '../lib/serializers.js';
-import { requirePermission } from '../middleware/requireAdminApiKey.js';
+import { requireAuthenticatedUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyMatchCancelled, notifyMatchCreated, notifyMatchUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
 
@@ -59,7 +59,7 @@ matchesRouter.get('/api/matches', asyncRoute(async (_request, response) => {
   response.json({ matches: matches.map(serializeMatch) });
 }));
 
-matchesRouter.post('/api/matches', requirePermission('createMatch'), asyncRoute(async (request, response) => {
+matchesRouter.post('/api/matches', requireAuthenticatedUser, asyncRoute(async (request, response) => {
   const errors = validateMatchPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);

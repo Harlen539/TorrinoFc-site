@@ -3204,7 +3204,7 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
     notes: '',
   });
   const [saving, setSaving] = useState(false);
-  const canManage = canUser(user, 'manageTryouts');
+  const canManage = Boolean(user);
 
   const updateCandidate = (id, patch) => {
     setForm((current) => ({
@@ -3554,8 +3554,8 @@ function MatchStatsRecorder({ match, players = [], setPlayers, notify, refreshCl
 function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, championships = [], notify, refreshClubData }) {
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
-  const canCreate = canUser(user, 'createMatch');
-  const canManage = canCreate || canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
+  const canCreate = Boolean(user);
+  const canManage = canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
 
   const handleSave = async (form, existingId) => {
     const match = normalizeMatchEvent({ ...form, home: 'TorinnoFC', date: formatDateLabel(form.dateKey), homeLogo: logo, score: form.score || '-' });
@@ -3662,8 +3662,8 @@ function Calendar({
   const selectedEvents = calendarEvents.filter((event) => event.dateKey === selectedDateKey);
   const visibleEvents = filter === 'Todos' ? calendarEvents : calendarEvents.filter((event) => getEventType(event) === filter);
   const selectedDateLabel = formatDateLabel(selectedDateKey);
-  const canCreateMatch = canUser(user, 'createMatch');
-  const canManageMatch = canCreateMatch || canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
+  const canCreateMatch = Boolean(user);
+  const canManageMatch = canUser(user, 'editMatch') || canUser(user, 'deleteMatch');
 
   const openForm = (dateKey, match = null) => {
     if (!canCreateMatch && !match) {

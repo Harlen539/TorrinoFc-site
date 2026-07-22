@@ -4,7 +4,7 @@ import { sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeStatus, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializeTryout } from '../lib/serializers.js';
-import { requirePermission } from '../middleware/requireAdminApiKey.js';
+import { requireAuthenticatedUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { recordActivity } from '../services/activityService.js';
 import { notifyTryoutCreated } from '../services/notificationService.js';
 import { sendTryoutNotification } from '../services/whatsappNotificationService.js';
@@ -80,7 +80,7 @@ tryoutsRouter.get('/api/tryouts', asyncRoute(async (_request, response) => {
   response.json({ tryouts: tryouts.map(serializeTryout) });
 }));
 
-tryoutsRouter.post('/api/tryouts', requirePermission('manageTryouts'), asyncRoute(async (request, response) => {
+tryoutsRouter.post('/api/tryouts', requireAuthenticatedUser, asyncRoute(async (request, response) => {
   const errors = validateTryoutPayload(request.body);
   if (errors.length) {
     sendValidationErrors(response, errors);
