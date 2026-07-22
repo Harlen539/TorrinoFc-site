@@ -5710,6 +5710,32 @@ section,
 }
 
 /* Final scheduling overrides live after the legacy responsive rules. */
+.page-error-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(680px, 100%);
+  margin-inline: auto;
+  padding: 18px;
+}
+
+.page-error-card > svg {
+  flex: 0 0 auto;
+  color: var(--gold);
+}
+
+.page-error-card > div {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+.page-error-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .match-create-inline {
   width: min(860px, 100%);
   margin: 0 auto 14px;
@@ -5814,6 +5840,15 @@ section,
 }
 
 @media (max-width: 760px) {
+  .page-error-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-error-card .button {
+    width: 100%;
+  }
+
   .match-create-inline {
     width: 100%;
   }

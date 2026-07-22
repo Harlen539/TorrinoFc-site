@@ -1939,7 +1939,54 @@ function PageRouter(props) {
     logout: <LogoutPage {...props} />,
   };
 
-  return <div className="page-transition" key={view}>{pages[view] || <Dashboard {...props} />}</div>;
+  return (
+    <div className="page-transition" key={view}>
+      <PageErrorBoundary resetKey={view} onRecover={() => props.setView('dashboard')}>
+        {pages[view] || <Dashboard {...props} />}
+      </PageErrorBoundary>
+    </div>
+  );
+}
+
+class PageErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[PageErrorBoundary] Falha ao renderizar pagina:', error, info);
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <section>
+        <SectionHeader eyebrow="Recuperacao" title="Nao foi possivel abrir esta pagina" />
+        <div className="panel page-error-card">
+          <RefreshCw size={22} />
+          <div>
+            <strong>A plataforma continua funcionando.</strong>
+            <span>Volte ao painel e tente novamente.</span>
+          </div>
+          <button className="button primary" type="button" onClick={this.props.onRecover}>
+            Voltar ao painel
+          </button>
+        </div>
+      </section>
+    );
+  }
 }
 
 function LogoutPage({ user, onLogout, onLogoutAllDevices, onSwitchAccount }) {
@@ -3821,7 +3868,7 @@ function Calendar({
             <div className="calendar-day-actions">
               <button
                 className="button primary"
-                disabled={!isAdmin}
+                disabled={!canCreateMatch}
                 type="button"
                 onClick={() => {
                   openForm(selectedDateKey);
