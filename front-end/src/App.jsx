@@ -3588,8 +3588,34 @@ function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, c
     <section>
       <div className="calendar-header">
         <SectionHeader eyebrow="Agenda competitiva" title="Partidas" />
-        {canCreate && <button className="button primary" type="button" onClick={() => setModal({ type: 'new-match', dateKey: toDateKey(new Date()) })}><Plus size={16} />Nova partida</button>}
+        {canCreate && (
+          <button
+            className={`button ${modal?.type === 'new-match' ? 'secondary' : 'primary'}`}
+            type="button"
+            onClick={() => setModal(modal?.type === 'new-match' ? null : { type: 'new-match', dateKey: toDateKey(new Date()) })}
+          >
+            {modal?.type === 'new-match' ? <X size={16} /> : <Plus size={16} />}
+            {modal?.type === 'new-match' ? 'Fechar formulario' : 'Nova partida'}
+          </button>
+        )}
       </div>
+      {modal?.type === 'new-match' && (
+        <MatchModal
+          inline
+          modal={modal}
+          championships={championships}
+          isAdmin={canManage}
+          players={players}
+          setPlayers={setPlayers}
+          saving={saving}
+          notify={notify}
+          refreshClubData={refreshClubData}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+          onEdit={(match) => setModal({ type: 'edit-match', dateKey: match.dateKey, match })}
+          onDelete={handleDelete}
+        />
+      )}
       <div className="match-list">
         {matches.map((match) => (
           <MatchCard
@@ -3604,7 +3630,7 @@ function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, c
           />
         ))}
       </div>
-      {modal && (
+      {modal && modal.type !== 'new-match' && (
         <MatchModal
           modal={modal}
           championships={championships}
@@ -3920,6 +3946,7 @@ function TryoutDetailModal({ tryout, onClose }) {
 }
 
 function MatchModal({
+  inline = false,
   modal,
   championships,
   isAdmin,
@@ -3981,13 +4008,12 @@ function MatchModal({
     );
   };
 
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="panel app-modal" role="dialog" aria-modal="true" aria-labelledby="match-modal-title">
+  const content = (
+      <section className="panel app-modal" role="dialog" aria-modal={!inline} aria-labelledby="match-modal-title">
         <div className="modal-head">
           <div>
-            <span>{isDetails ? 'Detalhes da partida' : match.id ? 'Editar partida' : 'Nova partida'}</span>
-            <h3 id="match-modal-title">{isDetails ? `${match.home || 'TorinnoFC'} x ${match.away}` : formatDateLabel(form.dateKey)}</h3>
+            <span>{isDetails ? 'Detalhes da partida' : match.id ? 'Editar partida' : 'Agenda competitiva'}</span>
+            <h3 id="match-modal-title">{isDetails ? `${match.home || 'TorinnoFC'} x ${match.away}` : match.id ? formatDateLabel(form.dateKey) : 'Nova partida no EA FC'}</h3>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">
             <X size={18} />
@@ -4106,6 +4132,15 @@ function MatchModal({
           </form>
         )}
       </section>
+  );
+
+  if (inline) {
+    return <div className="match-create-inline">{content}</div>;
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      {content}
     </div>
   );
 }
