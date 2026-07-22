@@ -202,6 +202,14 @@ export function requireAuthenticatedUser(request, response, next) {
     });
 }
 
+export function requireAuthenticatedProfile(request, response, next) {
+  resolveAuthenticatedProfile(request)
+    .then(() => next())
+    .catch((error) => {
+      response.status(error.statusCode || 401).json({ error: error.message || 'Usuario autenticado obrigatorio.' });
+    });
+}
+
 export function requirePermission(permissionKey) {
   return (request, response, next) => {
     resolveAuthenticatedProfile(request)

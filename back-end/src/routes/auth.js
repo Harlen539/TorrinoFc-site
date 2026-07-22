@@ -4,8 +4,6 @@ import { isValidEmail, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer, serializeUserProfile } from '../lib/serializers.js';
-import { recordActivity } from '../services/activityService.js';
-import { notifyMemberJoined } from '../services/notificationService.js';
 import { ensurePlayerForUser } from '../services/playerSyncService.js';
 
 export const authRouter = Router();
@@ -51,7 +49,7 @@ async function createSupabaseAuthUser({ email, password, name, nickname, positio
       body: JSON.stringify({
         email,
         password,
-        email_confirm: true,
+        email_confirm: false,
         user_metadata: { name, nickname, position, shirt },
       }),
     });
@@ -126,7 +124,7 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
       const data = {
         name,
         nickname,
-        accountStatus: 'active',
+        accountStatus: existing?.accountStatus || 'pending_email',
         updatedAt: new Date(),
         ...(request.body.avatarUrl || request.body.photo
           ? { avatarUrl: sanitizeNullableText(request.body.avatarUrl || request.body.photo, { maxLength: 1200 }) }
@@ -149,7 +147,7 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
           include: { playerProfile: true },
         });
 
-      const shouldHavePlayer = profile.role !== 'admin' || Boolean(profile.playerProfile);
+      const shouldHavePlayer = Boolean(profile.playerProfile);
       const player = shouldHavePlayer
         ? await ensurePlayerForUser(tx, profile, {
           name,
@@ -166,7 +164,7 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
         include: { playerProfile: true },
       });
 
-      return { profile: syncedProfile, player, isNewProfile: !existing };
+      return { profile: syncedProfile, player };
     });
   } catch (error) {
     try {
@@ -177,27 +175,13 @@ authRouter.post('/api/auth/register', asyncRoute(async (request, response) => {
     throw httpError(500, 'Nao foi possivel criar o perfil. A criacao da conta foi revertida; tente novamente.');
   }
 
-  if (result.isNewProfile) {
-    await Promise.allSettled([
-      notifyMemberJoined(result.profile),
-      recordActivity({
-        type: 'member_joined',
-        actorId: result.profile.id,
-        actorName: result.profile.nickname || result.profile.name,
-        message: `${result.profile.nickname || result.profile.name} entrou para o clube.`,
-        relatedEntityType: 'user',
-        relatedEntityId: result.profile.id,
-        actionUrl: '/players',
-      }),
-    ]);
-  }
-
-  response.status(201).json({
+  response.status(202).json({
     user: serializeUserProfile(result.profile),
     player: result.player ? serializePlayer(result.player) : null,
     playerId: result.player?.id || '',
     role: result.profile.role,
     staffRole: result.profile.staffRole || (result.profile.role === 'admin' ? 'Admin' : 'Jogador'),
     authUser: makePublicAuthUser(authUser),
+    requiresEmailConfirmation: true,
   });
 }));

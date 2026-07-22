@@ -206,6 +206,14 @@ A configuração completa está em [back-end/WHATSAPP_NOTIFICATIONS.md](./back-e
 - `VITE_SUPABASE_URL` e `SUPABASE_URL` devem apontar para exatamente o mesmo projeto Supabase.
 - O cadastro exige `SUPABASE_SERVICE_ROLE_KEY`; se ela estiver ausente, a API retorna 503 e não cria perfil órfão.
 - O frontend não armazena senhas nem mantém uma sessão paralela no `localStorage`; a persistência é gerenciada pelo Supabase Auth.
+- Novas contas ficam com `accountStatus=pending_email` até o usuário confirmar o endereço pelo link do Supabase; somente então o perfil é ativado e vinculado ao elenco.
+
+No painel do Supabase, mantenha o provedor de e-mail habilitado e configure em **Authentication > URL Configuration**:
+
+- **Site URL**: domínio principal publicado no Vercel.
+- **Redirect URLs**: domínio de produção e `http://localhost:5173` para desenvolvimento.
+
+Sem essas URLs, o e-mail pode ser enviado, mas o link de confirmação não conseguirá restaurar a sessão no frontend.
 - Chaves secretas, URLs do banco e credenciais SMTP devem existir apenas no backend.
 - O arquivo `.env` não deve ser versionado.
 - A variável `ADMIN_API_KEY` existe somente para compatibilidade legada interna e não deve ser exposta no frontend.

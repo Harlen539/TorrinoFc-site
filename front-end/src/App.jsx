@@ -36,6 +36,7 @@ import {
 import { hasSupabaseConfig, supabase } from './lib/supabaseClient.js';
 import {
   getAuthSession,
+  resendSignupConfirmation,
   signInWithPassword,
   signOut as signOutSupabase,
   subscribeToAuthChanges,
@@ -986,17 +987,35 @@ function App() {
   };
 
   const completeServerRegistration = async (form) => {
-    await apiRegisterAccount({
+    const email = normalizeEmail(form.email);
+    const registered = await apiRegisterAccount({
       name: form.name.trim(),
       nickname: form.nickname.trim(),
-      email: normalizeEmail(form.email),
+      email,
       password: form.password,
       position: form.position,
       shirt: form.shirt,
     });
 
-    const data = await signInWithPassword(normalizeEmail(form.email), form.password);
-    if (!data.user) throw new Error('Conta criada, mas a sessao nao foi iniciada. Faca login novamente.');
+    if (registered?.requiresEmailConfirmation) {
+      let confirmationSent = true;
+      try {
+        await resendSignupConfirmation(email);
+      } catch {
+        confirmationSent = false;
+      }
+      return {
+        info: confirmationSent
+          ? 'Cadastro salvo. Enviamos um link de confirmacao para seu e-mail. Confirme o endereco e depois entre com sua senha.'
+          : 'Cadastro salvo, mas o e-mail de confirmacao nao foi enviado. Use o botao Reenviar confirmacao abaixo.',
+        nextMode: 'login',
+      };
+    }
+
+    const data = await signInWithPassword(email, form.password);
+    if (!data.user) {
+      return { info: 'Cadastro salvo. Entre com seu e-mail e senha para continuar.', nextMode: 'login' };
+    }
     return completeSupabaseAuth(data.user);
   };
 
@@ -1430,6 +1449,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
   const [info, setInfo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [resendingConfirmation, setResendingConfirmation] = useState(false);
 
   const isRegister = mode === 'register';
 
@@ -1465,6 +1485,7 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       if (result?.info) {
         setError('');
         setInfo(result.info);
+        if (result.nextMode) setMode(result.nextMode);
         return;
       }
 
@@ -1502,6 +1523,25 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
       setError(authErrorMessage(resetError, 'Nao foi possivel enviar o link de recuperacao.'));
     } finally {
       setResettingPassword(false);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    if (resendingConfirmation) return;
+    const email = normalizeEmail(form.email);
+    if (!isValidEmail(email)) {
+      setError('Digite um e-mail valido para reenviar a confirmacao.');
+      return;
+    }
+    setResendingConfirmation(true);
+    try {
+      await resendSignupConfirmation(email);
+      setError('');
+      setInfo('Novo link de confirmacao enviado. Confira também a pasta de spam.');
+    } catch (confirmationError) {
+      setError(authErrorMessage(confirmationError, 'Nao foi possivel reenviar a confirmacao agora.'));
+    } finally {
+      setResendingConfirmation(false);
     }
   };
 
@@ -1543,12 +1583,14 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
               <Field label="Apelido no time" value={form.nickname} onChange={(nickname) => setForm({ ...form, nickname })} />
             </>
           )}
-          <Field label="E-mail" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
+          <Field label="E-mail" type="email" value={form.email} required autoComplete="email" onChange={(email) => setForm({ ...form, email })} />
           <label className="field">
             <span>Senha</span>
             <div className="password-input">
               <input
                 type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete={isRegister ? 'new-password' : 'current-password'}
                 value={form.password}
                 onChange={(event) => setForm({ ...form, password: event.target.value })}
                 placeholder="minimo 6 caracteres"
@@ -1578,6 +1620,11 @@ function AuthScreen({ mode, setMode, onAuth, onBack }) {
             <ChevronRight size={18} />
           </button>
           <div className="auth-help-actions">
+            {!isRegister && (
+              <button className="button minimal" type="button" disabled={resendingConfirmation} onClick={resendConfirmation}>
+                {resendingConfirmation ? 'Reenviando...' : 'Reenviar confirmacao'}
+              </button>
+            )}
             <button className="button minimal" type="button" disabled={resettingPassword} onClick={sendPasswordReset}>
               {resettingPassword ? 'Enviando...' : 'Recuperar senha'}
             </button>
@@ -5811,11 +5858,11 @@ function SectionHeader({ eyebrow, title }) {
   );
 }
 
-function Field({ label, value, onChange, type = 'text', placeholder = '' }) {
+function Field({ label, value, onChange, type = 'text', placeholder = '', required = false, autoComplete }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value} placeholder={placeholder} required={required} autoComplete={autoComplete} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
@@ -5901,8 +5948,11 @@ function authErrorMessage(error, fallback) {
   if (raw.includes('signup') && (raw.includes('disabled') || raw.includes('not allowed'))) {
     return 'O cadastro esta desativado no provedor de login.';
   }
-  if (raw.includes('email')) {
-    return 'Verifique o e-mail informado e tente novamente.';
+  if (raw.includes('email_not_confirmed') || raw.includes('email not confirmed')) {
+    return 'Confirme seu e-mail pelo link enviado antes de entrar.';
+  }
+  if (raw.includes('invalid') && raw.includes('email')) {
+    return 'O e-mail informado nao e valido. Confira o endereco completo.';
   }
 
   return fallback;

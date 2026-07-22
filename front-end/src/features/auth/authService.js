@@ -27,6 +27,16 @@ export async function signInWithPassword(email, password) {
   return data;
 }
 
+export async function resendSignupConfirmation(email) {
+  const client = requireSupabase();
+  const { error } = await client.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: window.location.origin },
+  });
+  if (error) throw error;
+}
+
 export async function signOut({ allDevices = false } = {}) {
   const client = requireSupabase();
   const { error } = await client.auth.signOut(allDevices ? { scope: 'global' } : undefined);

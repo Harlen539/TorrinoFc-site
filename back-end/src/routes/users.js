@@ -3,7 +3,7 @@ import { isValidEmail, sendValidationErrors } from '../lib/httpValidation.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer, serializeUserProfile } from '../lib/serializers.js';
-import { requireAdminUser, requireAuthenticatedUser, requirePermission } from '../middleware/requireAdminApiKey.js';
+import { requireAdminUser, requireAuthenticatedProfile, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { ensurePlayerForUser } from '../services/playerSyncService.js';
 import { notifyMemberJoined, notifyRoleUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
@@ -28,7 +28,7 @@ usersRouter.get('/api/users', requireAdminUser, asyncRoute(async (_request, resp
   response.json({ users: users.map(serializeUserProfile) });
 }));
 
-usersRouter.post('/api/users/sync', requireAuthenticatedUser, asyncRoute(async (request, response) => {
+usersRouter.post('/api/users/sync', requireAuthenticatedProfile, asyncRoute(async (request, response) => {
   const email = String(request.body.email || '').trim().toLowerCase();
   const errors = [];
 
@@ -46,10 +46,11 @@ usersRouter.post('/api/users/sync', requireAuthenticatedUser, asyncRoute(async (
   }
 
   const existing = await prisma.userProfile.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+  const wasPendingEmail = existing?.accountStatus === 'pending_email';
   const data = {
     name: sanitizeText(request.body.name, { maxLength: 120 }),
     nickname: sanitizeNullableText(request.body.nickname, { maxLength: 80 }),
-    accountStatus: existing?.accountStatus || 'active',
+    accountStatus: existing?.accountStatus === 'pending_email' ? 'active' : (existing?.accountStatus || 'active'),
     updatedAt: new Date(),
     ...(request.body.avatarUrl || request.body.photo
       ? { avatarUrl: sanitizeNullableText(request.body.avatarUrl || request.body.photo, { maxLength: 1200 }) }
@@ -85,7 +86,7 @@ usersRouter.post('/api/users/sync', requireAuthenticatedUser, asyncRoute(async (
     return { profile: syncedProfile, player };
   });
 
-  if (!existing) {
+  if (!existing || wasPendingEmail) {
     await notifyMemberJoined(result.profile);
     await recordActivity({
       type: 'member_joined',
