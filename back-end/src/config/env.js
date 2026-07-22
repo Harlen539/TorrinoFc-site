@@ -27,6 +27,7 @@ export const env = {
     'https://torrinosfc-site.vercel.app',
   ].filter((origin, index, items) => items.indexOf(origin) === index),
   adminApiKey: process.env.ADMIN_API_KEY || '',
+  adminPromotionPasswordHash: process.env.ADMIN_PROMOTION_PASSWORD_HASH || '18e8c3e6a2ef34c1c2e4f71bfa57835d5ee079c9d7b74c8a5e73c9b77da34b15',
   databaseUrl: process.env.DATABASE_URL || '',
   supabase: {
     url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || supabaseUrlFromJwks(),

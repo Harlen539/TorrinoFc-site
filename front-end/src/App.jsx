@@ -87,8 +87,10 @@ import {
   updateRolePermission,
   updatePlayerStats as apiUpdatePlayerStats,
   createTryout as apiCreateTryout,
+  promoteCurrentUser as apiPromoteCurrentUser,
   updateTryoutStatus as apiUpdateTryoutStatus,
   updateUserRole as apiUpdateUserRole,
+  updateUserStatus as apiUpdateUserStatus,
 } from './lib/api.js';
 
 const logo = '/assets/logo-torrino.png';
@@ -3377,15 +3379,8 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
           </div>
         )}
 
-        <div className="tryout-stack">
-          <div className="panel tryout-info">
-            <UserPlus size={24} />
-            <div>
-              <h3>Testes abertos</h3>
-              <p>Registre os jogadores interessados e acompanhe os testes do elenco no EA FC.</p>
-            </div>
-          </div>
-
+        {tryouts.length > 0 && (
+          <div className="tryout-stack">
           <div className="tryout-list">
             {tryouts.map((tryout) => (
               <article className="tryout-card" key={tryout.id}>
@@ -3429,9 +3424,9 @@ function Tryouts({ user, tryouts, setTryouts, notify, refreshClubData }) {
                 )}
               </article>
             ))}
-            {tryouts.length === 0 && <div className="empty-state">Nenhum teste agendado ainda.</div>}
           </div>
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -3608,15 +3603,6 @@ function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, c
             refreshClubData={refreshClubData}
           />
         ))}
-        {matches.length === 0 && (
-          <EmptyState
-            icon={Flag}
-            title="Nenhuma partida agendada"
-            description={canCreate ? 'Crie a primeira partida para ela aparecer aqui e no calendario.' : 'Quando uma partida for criada, ela aparecera aqui.'}
-            action={canCreate ? 'Nova partida' : undefined}
-            onAction={canCreate ? () => setModal({ type: 'new-match', dateKey: toDateKey(new Date()) }) : undefined}
-          />
-        )}
       </div>
       {modal && (
         <MatchModal
@@ -4504,7 +4490,7 @@ function ChampionshipModal({ championship, saving, onClose, onSave }) {
   );
 }
 
-function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, createPlayer, removePlayer, notify }) {
+function AdminPanel({ user, users, setUsers, players, matches, saveMatch, setUserRole, createPlayer, removePlayer, notify, refreshClubData }) {
   const [newMatch, setNewMatch] = useState({
     away: '',
     date: toDateKey(new Date()),
@@ -4640,6 +4626,7 @@ function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, cre
           <div className="member-list">
             {users.map((account) => {
               const isFounder = account.staffRole === 'Fundador';
+              const isRemoved = account.accountStatus === 'removed';
               return (
                 <div className="member-row" key={account.id}>
                   <div className={`avatar small ${account.photo ? 'has-photo' : ''}`}>
@@ -4669,6 +4656,28 @@ function AdminPanel({ user, users, players, matches, saveMatch, setUserRole, cre
                   >
                     {isFounder ? 'Fundador' : roleLabel(account.role)}
                   </button>
+                  {!isFounder && account.id !== user.id && (
+                    <button
+                      className={`button minimal small ${isRemoved ? '' : 'danger'}`}
+                      type="button"
+                      onClick={async () => {
+                        const nextStatus = isRemoved ? 'active' : 'removed';
+                        if (!window.confirm(`${isRemoved ? 'Restaurar' : 'Remover'} o acesso de ${account.nickname || account.name}?`)) return;
+                        try {
+                          const updated = await apiUpdateUserStatus(account.backendId || account.id, nextStatus);
+                          setUsers((items) => items.map((item) => (
+                            item.id === account.id ? { ...item, accountStatus: updated.accountStatus } : item
+                          )));
+                          await refreshClubData?.({ silent: true });
+                          notify(isRemoved ? 'Acesso restaurado.' : 'Jogador removido da plataforma.');
+                        } catch (error) {
+                          notify(error.message || 'Nao foi possivel alterar o acesso deste usuario.');
+                        }
+                      }}
+                    >
+                      {isRemoved ? 'Restaurar acesso' : 'Remover acesso'}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -4845,6 +4854,7 @@ function readAppSettings() {
 
 function SettingsPage({
   user,
+  setUser,
   users,
   setUsers,
   setUserRole,
@@ -4862,6 +4872,8 @@ function SettingsPage({
   const [settings, setSettings] = useState(readAppSettings);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
+  const [promotionPassword, setPromotionPassword] = useState('');
+  const [promoting, setPromoting] = useState(false);
   const isFounder = user.staffRole === 'Fundador';
   const canManagePermissions = isFounder || (user.role === 'admin' && settings.permissions.admin.managePermissions);
 
@@ -4991,6 +5003,40 @@ function SettingsPage({
     }
   };
 
+  const promoteToAdmin = async (event) => {
+    event.preventDefault();
+    if (!promotionPassword) {
+      notify('Digite a senha administrativa.');
+      return;
+    }
+    setPromoting(true);
+    try {
+      const updated = await apiPromoteCurrentUser(promotionPassword);
+      const promoted = normalizeUser({
+        ...user,
+        ...updated,
+        id: user.id,
+        backendId: updated.id,
+        role: 'admin',
+        staffRole: 'Admin',
+      });
+      setUser(publicUser(promoted));
+      setUsers((items) => {
+        const exists = items.some((item) => item.id === user.id || item.email?.toLowerCase() === user.email?.toLowerCase());
+        return exists
+          ? items.map((item) => (item.id === user.id || item.email?.toLowerCase() === user.email?.toLowerCase() ? promoted : item))
+          : [promoted, ...items];
+      });
+      setPromotionPassword('');
+      await refreshClubData?.({ silent: true });
+      notify('Acesso administrativo ativado. A aba Admin ja esta disponivel.');
+    } catch (error) {
+      notify(error.message || 'Nao foi possivel ativar o acesso administrativo.');
+    } finally {
+      setPromoting(false);
+    }
+  };
+
   return (
     <section className="settings-page">
       <SectionHeader eyebrow="Preferencias" title="Configuracoes" />
@@ -5005,6 +5051,22 @@ function SettingsPage({
           </div>
           <span className={`role-badge ${user.role === 'admin' ? 'admin' : 'player'}`}>{user.staffRole || roleLabel(user.role)}</span>
         </div>
+        {user.role !== 'admin' && (
+          <form className="panel admin-access-card" onSubmit={promoteToAdmin}>
+            <div className="admin-access-copy">
+              <ShieldCheck size={20} />
+              <div>
+                <strong>Alterar cargo para Administrador</strong>
+                <span>Informe a senha de seguranca para liberar o painel administrativo.</span>
+              </div>
+            </div>
+            <Field label="Senha administrativa" type="password" value={promotionPassword} onChange={setPromotionPassword} />
+            <button className="button primary" type="submit" disabled={promoting}>
+              <ShieldCheck size={16} />
+              {promoting ? 'Validando...' : 'Ativar Admin'}
+            </button>
+          </form>
+        )}
         <PasswordChangeCard notify={notify} />
       </SettingsGroup>
 

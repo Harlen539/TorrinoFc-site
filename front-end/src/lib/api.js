@@ -175,6 +175,14 @@ export function updateUserRole(id, role) {
   return request(`/api/users/${id}/role`, { method: 'PATCH', body: { role } }).then((data) => data.user);
 }
 
+export function promoteCurrentUser(password) {
+  return request('/api/users/me/promote', { method: 'POST', body: { password } }).then((data) => data.user);
+}
+
+export function updateUserStatus(id, status) {
+  return request(`/api/users/${id}/status`, { method: 'PATCH', body: { status } }).then((data) => data.user);
+}
+
 export function fetchMyPerformance() {
   return request('/api/me/performance');
 }
