@@ -219,6 +219,11 @@ export function requirePermission(permissionKey) {
           return;
         }
 
+        if (profile.role === 'admin') {
+          next();
+          return;
+        }
+
         const allowed = await hasPermission(prisma, profile.role, permissionKey);
         if (!allowed) {
           response.status(403).json({ error: 'Permissao insuficiente para realizar esta acao.' });

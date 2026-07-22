@@ -2801,14 +2801,12 @@ textarea {
 }
 
 @media (max-width: 720px) {
-  .tryout-candidate-row,
-  .settings-refresh-card {
+  .tryout-candidate-row {
     grid-template-columns: 1fr;
     display: grid;
   }
 
-  .calendar-day-actions,
-  .settings-refresh-card .button {
+  .calendar-day-actions {
     width: 100%;
   }
 
@@ -4188,42 +4186,6 @@ textarea {
   background: rgba(212, 162, 76, 0.08);
   font-size: 12px;
   font-weight: 800;
-}
-
-.settings-sync-grid {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-}
-
-.settings-refresh-card {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 12px;
-}
-
-.settings-refresh-card > div {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.settings-refresh-card strong,
-.settings-refresh-card span,
-.settings-refresh-card small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.settings-refresh-card span,
-.settings-refresh-card small {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .logout-page {
@@ -5710,6 +5672,16 @@ section,
 }
 
 /* Final scheduling overrides live after the legacy responsive rules. */
+.dashboard-panel .empty-state-card {
+  flex-wrap: wrap;
+}
+
+.dashboard-panel .empty-state-card > .button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .page-error-card {
   display: flex;
   align-items: center;
@@ -5840,6 +5812,27 @@ section,
 }
 
 @media (max-width: 760px) {
+  .dashboard-panel .empty-state-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-panel .empty-state-card > .icon-tile {
+    align-self: flex-start;
+  }
+
+  .dashboard-panel .empty-state-card strong {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .dashboard-panel .empty-state-card > .button {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+
   .page-error-card {
     align-items: stretch;
     flex-direction: column;

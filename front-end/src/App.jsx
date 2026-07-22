@@ -57,6 +57,7 @@ import {
   fetchAchievements,
   fetchChampionships,
   fetchClubSettings,
+  fetchCurrentUser,
   fetchMatches,
   fetchMatchday,
   fetchMatchAttendance,
@@ -487,6 +488,8 @@ function normalizeUser(user) {
     email: user.email || '',
     role: user.role === 'admin' ? 'admin' : 'player',
     staffRole: user.staffRole || (user.role === 'admin' ? 'Admin' : 'Jogador'),
+    accountStatus: user.accountStatus || user.account_status || 'active',
+    joinedAt: user.joinedAt || user.joined_at || '',
     position: user.position || 'Meio-campo',
     shirt: String(user.shirt || '10'),
     playerId: user.playerId || user.player?.id || '',
@@ -965,12 +968,18 @@ function App() {
     });
 
     const synced = await apiSyncUser(user);
+    if (synced.accountStatus && synced.accountStatus !== 'active') {
+      await signOutSupabase().catch(() => null);
+      throw new Error('Seu acesso a plataforma foi removido por um administrador.');
+    }
     user = normalizeUser({
       ...user,
       id: synced.id,
       backendId: synced.id,
       role: synced.role,
       staffRole: synced.staffRole,
+      accountStatus: synced.accountStatus,
+      joinedAt: synced.joinedAt,
       permissions: synced.permissions,
       playerId: synced.playerId,
       hasPlayerProfile: Boolean(synced.playerId),
@@ -1059,6 +1068,45 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session?.id) return undefined;
+    let active = true;
+
+    const validateAccountAccess = async () => {
+      try {
+        const current = await fetchCurrentUser();
+        if (!active) return;
+        if (current.accountStatus !== 'active') {
+          await signOutSupabase().catch(() => null);
+          setSession(null);
+          setView('auth');
+          setAuthMode('login');
+          setServerState((state) => ({ ...state, error: 'Seu acesso a plataforma foi removido por um administrador.' }));
+          return;
+        }
+
+        setUsers((items) => items.map((item) => (
+          item.id === session.id || item.email?.toLowerCase() === current.email?.toLowerCase()
+            ? normalizeUser({ ...item, ...current, backendId: current.id })
+            : item
+        )));
+      } catch (error) {
+        if (active && error?.status === 401) {
+          setSession(null);
+          setView('auth');
+          setAuthMode('login');
+        }
+      }
+    };
+
+    validateAccountAccess();
+    const timer = window.setInterval(validateAccountAccess, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.id]);
+
   const handleAuth = async (form, isRegister) => {
     const email = normalizeEmail(form.email);
     if (!isValidEmail(email)) {
@@ -1133,7 +1181,7 @@ function App() {
 
   const removeChampionship = async (championshipId) => {
     if (!String(championshipId).startsWith('local-')) {
-      await apiDeleteChampionship(championshipId).catch(() => null);
+      await apiDeleteChampionship(championshipId);
     }
     setChampionships((items) => items.filter((championship) => championship.id !== championshipId));
     await refreshClubData({ silent: true });
@@ -4943,12 +4991,6 @@ function SettingsPage({
   notify,
   notificationPreferences,
   saveNotificationPreferences,
-  players = [],
-  matches = [],
-  tryouts = [],
-  championships = [],
-  activities = [],
-  serverState,
   refreshClubData,
 }) {
   const [settings, setSettings] = useState(readAppSettings);
@@ -4957,7 +4999,7 @@ function SettingsPage({
   const [promotionPassword, setPromotionPassword] = useState('');
   const [promoting, setPromoting] = useState(false);
   const isFounder = user.staffRole === 'Fundador';
-  const canManagePermissions = isFounder || (user.role === 'admin' && settings.permissions.admin.managePermissions);
+  const canManagePermissions = isFounder || user.role === 'admin';
 
   useEffect(() => {
     document.documentElement.classList.toggle('light-theme', !settings.appearance.darkTheme);
@@ -5159,33 +5201,6 @@ function SettingsPage({
         <SettingsItem title="Novas peneiras" checked={settings.notifications.newTryout} disabled={savingKey === 'notifications.newTryout'} onChange={() => updateSetting('notifications', 'newTryout')} />
       </SettingsGroup>
 
-      <SettingsGroup title="Atualizacoes da plataforma" description="Esses dados sao atualizados automaticamente quando alguem cadastra jogador, partida, peneira ou campeonato.">
-        <div className="settings-sync-grid">
-          <StatCard icon={Users} value={players.length} label="Jogadores" />
-          <StatCard icon={Flag} value={matches.length} label="Partidas" />
-          <StatCard icon={UserPlus} value={tryouts.length} label="Peneiras" />
-          <StatCard icon={Crown} value={championships.length} label="Campeonatos" />
-        </div>
-        <div className="panel settings-refresh-card">
-          <div>
-            <strong>Sincronizacao geral</strong>
-            <span>{serverState?.error ? 'Usando dados locais ate o backend voltar.' : 'Dados conectados e atualizados em tempo real curto.'}</span>
-            {activities[0] && <small>Ultima atividade: {formatDateTime(activities[0].createdAt)}</small>}
-          </div>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={async () => {
-              await refreshClubData?.({ silent: false });
-              notify('Dados da plataforma atualizados.');
-            }}
-          >
-            <RefreshCw size={16} />
-            Atualizar agora
-          </button>
-        </div>
-      </SettingsGroup>
-
       <SettingsGroup title="Preferencias de notificacoes">
         {!notificationPreferences && <div className="settings-warning">Preferencias ainda nao carregadas. Atualize novamente em alguns segundos.</div>}
         {notificationPreferences && (
@@ -5215,15 +5230,8 @@ function SettingsPage({
               />
               <PermissionCard
                 title="Admin"
-                permissions={settings.permissions.admin}
-                labels={{
-                  createMatch: 'Criar partida',
-                  editMatch: 'Editar partida',
-                  createPlayer: 'Cadastrar jogador',
-                  managePermissions: 'Permissoes',
-                }}
-                disabled={!canManagePermissions}
-                onToggle={(key) => updatePermission('admin', key)}
+                description="Acesso completo a jogadores, campeonatos, partidas, peneiras, calendario, desempenho e permissoes."
+                fixed
               />
               <PermissionCard
                 title="Jogador"

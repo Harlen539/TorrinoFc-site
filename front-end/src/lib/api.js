@@ -171,6 +171,10 @@ export function fetchUsers() {
   return request('/api/users').then((data) => data.users || []);
 }
 
+export function fetchCurrentUser() {
+  return request('/api/users/me').then((data) => data.user);
+}
+
 export function updateUserRole(id, role) {
   return request(`/api/users/${id}/role`, { method: 'PATCH', body: { role } }).then((data) => data.user);
 }

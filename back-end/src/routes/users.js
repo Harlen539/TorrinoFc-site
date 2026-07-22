@@ -49,6 +49,20 @@ usersRouter.get('/api/users', requireAdminUser, asyncRoute(async (_request, resp
   response.json({ users: users.map(serializeUserProfile) });
 }));
 
+usersRouter.get('/api/users/me', requireAuthenticatedProfile, asyncRoute(async (request, response) => {
+  const profile = await prisma.userProfile.findUnique({
+    where: { id: request.userProfile.id },
+    include: { playerProfile: true },
+  });
+
+  if (!profile) {
+    response.status(404).json({ error: 'Usuario nao encontrado.' });
+    return;
+  }
+
+  response.json({ user: serializeUserProfile(profile) });
+}));
+
 usersRouter.post('/api/users/sync', requireAuthenticatedProfile, asyncRoute(async (request, response) => {
   const email = String(request.body.email || '').trim().toLowerCase();
   const errors = [];
