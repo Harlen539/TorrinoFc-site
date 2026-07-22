@@ -2351,6 +2351,184 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.toolbar.compare-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.compare-select {
+  display: grid;
+  gap: 6px;
+}
+
+.compare-select span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.compare-select.gold span,
+.compare-player.gold > b,
+.compare-player.gold > div > strong {
+  color: var(--gold);
+}
+
+.compare-select.red span,
+.compare-player.red > b,
+.compare-player.red > div > strong {
+  color: #fb7185;
+}
+
+.compare-versus {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 1px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.compare-player-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.compare-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+}
+
+.compare-player.red {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.compare-player > div:not(.avatar) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.compare-player strong,
+.compare-player span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-player span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compare-player > b {
+  display: grid;
+  margin-left: auto;
+  font-size: 22px;
+  line-height: 1;
+  text-align: center;
+}
+
+.compare-player.red > b {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+.compare-player > b small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.compare-score {
+  display: grid;
+  grid-template-columns: auto auto;
+  place-items: center;
+  min-width: 88px;
+}
+
+.compare-score strong {
+  font-size: 22px;
+}
+
+.compare-score strong:first-child {
+  color: var(--gold);
+}
+
+.compare-score strong:last-child {
+  color: #fb7185;
+}
+
+.compare-score span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.compare-layout {
+  display: grid;
+  grid-template-columns: minmax(440px, 1.1fr) minmax(360px, 0.9fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.compare-radar-card .dashboard-panel-head {
+  align-items: start;
+}
+
+.compare-radar-card .dashboard-panel-head > small {
+  max-width: 220px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+}
+
+.chart-box.comparison-chart {
+  height: 360px;
+  padding: 12px 18px 2px;
+  overflow: hidden;
+}
+
+.comparison-head {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 70px;
+  gap: 10px;
+  padding: 0 10px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.comparison-head strong:first-child {
+  color: var(--gold);
+  text-align: left;
+}
+
+.comparison-head strong:last-child {
+  color: #fb7185;
+  text-align: right;
+}
+
 .trend {
   justify-self: end;
   padding: 4px 8px;
@@ -2391,6 +2569,44 @@ textarea {
 
 .comparison-row .best {
   color: var(--gold);
+}
+
+.comparison-row b:last-child.best {
+  color: #fb7185;
+}
+
+@media (max-width: 980px) {
+  .compare-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .toolbar.compare-toolbar,
+  .compare-player-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-versus,
+  .compare-score {
+    justify-self: center;
+  }
+
+  .compare-player.red {
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .compare-player.red > b {
+    margin-right: 0;
+    margin-left: auto;
+  }
+
+  .chart-box.comparison-chart {
+    height: 320px;
+    padding-inline: 4px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

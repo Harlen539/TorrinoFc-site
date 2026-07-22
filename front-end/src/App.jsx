@@ -3608,6 +3608,15 @@ function Matches({ user, players, setPlayers, matches, saveMatch, removeMatch, c
             refreshClubData={refreshClubData}
           />
         ))}
+        {matches.length === 0 && (
+          <EmptyState
+            icon={Flag}
+            title="Nenhuma partida agendada"
+            description={canCreate ? 'Crie a primeira partida para ela aparecer aqui e no calendario.' : 'Quando uma partida for criada, ela aparecera aqui.'}
+            action={canCreate ? 'Nova partida' : undefined}
+            onAction={canCreate ? () => setModal({ type: 'new-match', dateKey: toDateKey(new Date()) }) : undefined}
+          />
+        )}
       </div>
       {modal && (
         <MatchModal
@@ -4215,6 +4224,21 @@ function PlayerCompare({ players }) {
     ['participation', 'Participacao em gols', (player) => player.stats.goals + player.stats.assists],
     ['overall', 'Overall', calculatePlayerOverall],
   ];
+  const radarMetrics = [
+    ['Gols', (player) => player.stats.goals],
+    ['Assistencias', (player) => player.stats.assists],
+    ['Roubadas', (player) => player.stats.recoveries],
+    ['Nota media', (player) => player.stats.rating],
+    ['Overall', calculatePlayerOverall],
+  ];
+
+  const radarValue = (player, getter) => {
+    const highest = Math.max(1, ...players.map((item) => Number(getter(item)) || 0));
+    return Math.round(((Number(getter(player)) || 0) / highest) * 100);
+  };
+  const leftWins = metrics.filter(([, , getter]) => getter(left) > getter(right)).length;
+  const rightWins = metrics.filter(([, , getter]) => getter(right) > getter(left)).length;
+  const ties = metrics.length - leftWins - rightWins;
 
   if (players.length < 2) {
     return (
@@ -4229,35 +4253,68 @@ function PlayerCompare({ players }) {
     <section>
       <SectionHeader eyebrow="Comparacao" title="Jogador x jogador" />
       <div className="toolbar compare-toolbar">
-        <select value={left?.id || ''} onChange={(event) => setLeftId(event.target.value)}>
-          {players.map((player) => <option key={player.id} value={player.id}>{player.nickname}</option>)}
-        </select>
-        <select value={right?.id || ''} onChange={(event) => setRightId(event.target.value)}>
-          {players.map((player) => <option key={player.id} value={player.id}>{player.nickname}</option>)}
-        </select>
+        <label className="compare-select gold">
+          <span>Jogador 1</span>
+          <select value={left?.id || ''} onChange={(event) => setLeftId(event.target.value)}>
+            {players.map((player) => <option key={player.id} value={player.id} disabled={player.id === right?.id}>{player.nickname}</option>)}
+          </select>
+        </label>
+        <span className="compare-versus">VS</span>
+        <label className="compare-select red">
+          <span>Jogador 2</span>
+          <select value={right?.id || ''} onChange={(event) => setRightId(event.target.value)}>
+            {players.map((player) => <option key={player.id} value={player.id} disabled={player.id === left?.id}>{player.nickname}</option>)}
+          </select>
+        </label>
       </div>
-      <div className="matchday-grid">
-        <article className="panel dashboard-panel">
+      <div className="compare-player-strip">
+        <div className="compare-player gold">
+          <div className={`avatar ${left.photo ? 'has-photo' : ''}`}>{left.photo ? <img src={left.photo} alt="" /> : getInitials(left.nickname)}</div>
+          <div><strong>{left.nickname}</strong><span>{left.position} | #{left.shirt}</span></div>
+          <b>{calculatePlayerOverall(left)} <small>OVR</small></b>
+        </div>
+        <div className="compare-score"><strong>{leftWins}</strong><span>{ties} empates</span><strong>{rightWins}</strong></div>
+        <div className="compare-player red">
+          <b>{calculatePlayerOverall(right)} <small>OVR</small></b>
+          <div><strong>{right.nickname}</strong><span>{right.position} | #{right.shirt}</span></div>
+          <div className={`avatar ${right.photo ? 'has-photo' : ''}`}>{right.photo ? <img src={right.photo} alt="" /> : getInitials(right.nickname)}</div>
+        </div>
+      </div>
+      <div className="compare-layout">
+        <article className="panel dashboard-panel compare-radar-card">
           <div className="dashboard-panel-head">
-            <div><span>Radar</span><h3>{left.nickname} x {right.nickname}</h3></div>
+            <div><span>Indice comparativo</span><h3>{left.nickname} x {right.nickname}</h3></div>
+            <small>Cada eixo vai de 0 a 100 em relacao ao melhor valor do elenco.</small>
           </div>
           <ApexChart
-            className="chart-box"
+            className="chart-box comparison-chart"
             options={{
-              chart: { type: 'radar', toolbar: { show: false }, foreColor: '#99a4b8' },
+              chart: { type: 'radar', toolbar: { show: false }, foreColor: '#cbd5e1', parentHeightOffset: 0 },
               series: [
-                { name: left.nickname, data: [left.stats.goals, left.stats.assists, left.stats.recoveries, left.stats.rating * 10, calculatePlayerOverall(left)] },
-                { name: right.nickname, data: [right.stats.goals, right.stats.assists, right.stats.recoveries, right.stats.rating * 10, calculatePlayerOverall(right)] },
+                { name: left.nickname, data: radarMetrics.map(([, getter]) => radarValue(left, getter)) },
+                { name: right.nickname, data: radarMetrics.map(([, getter]) => radarValue(right, getter)) },
               ],
-              labels: ['Gols', 'Assist.', 'Roubadas', 'Nota', 'Overall'],
+              xaxis: {
+                categories: radarMetrics.map(([label]) => label),
+                labels: { style: { colors: Array(radarMetrics.length).fill('#cbd5e1'), fontSize: '12px', fontWeight: 700 } },
+              },
               colors: ['#d4a24c', '#8a1024'],
-              yaxis: { show: false },
-              fill: { opacity: 0.15 },
-              stroke: { width: 2 },
+              yaxis: { show: false, min: 0, max: 100, tickAmount: 5 },
+              fill: { opacity: 0.2 },
+              stroke: { width: 2.5 },
+              markers: { size: 4, strokeWidth: 2, hover: { size: 6 } },
+              legend: { position: 'bottom', fontSize: '13px', fontWeight: 700, markers: { size: 6 } },
+              plotOptions: { radar: { size: 120, polygons: { strokeColors: 'rgba(148, 163, 184, 0.18)', connectorColors: 'rgba(148, 163, 184, 0.14)', fill: { colors: ['rgba(255,255,255,0.018)', 'rgba(255,255,255,0.035)'] } } } },
+              tooltip: { y: { formatter: (value) => `${Math.round(value)} / 100` } },
             }}
           />
         </article>
-        <article className="panel dashboard-panel">
+        <article className="panel dashboard-panel compare-stats-card">
+          <div className="comparison-head">
+            <strong>{left.nickname}</strong>
+            <span>Estatisticas</span>
+            <strong>{right.nickname}</strong>
+          </div>
           <div className="comparison-table">
             {metrics.map(([key, label, getter]) => {
               const leftValue = getter(left);
@@ -4741,6 +4798,8 @@ const defaultAppSettings = {
     player: {
       viewCalendar: true,
       viewMatches: true,
+      createMatch: true,
+      manageTryouts: true,
       editOwnPerformance: true,
       viewOwnProfile: true,
       viewTeamInfo: true,
@@ -5028,6 +5087,8 @@ function SettingsPage({
                 labels={{
                   viewCalendar: 'Calendario',
                   viewMatches: 'Partidas',
+                  createMatch: 'Criar partida',
+                  manageTryouts: 'Criar peneira',
                   editOwnPerformance: 'Desempenho',
                 }}
                 disabled={!canManagePermissions}
