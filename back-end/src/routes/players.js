@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import { sanitizeNullableText, sanitizeText } from '../lib/sanitizeInput.js';
 import { serializePlayer } from '../lib/serializers.js';
-import { requirePermission } from '../middleware/requireAdminApiKey.js';
+import { requireAdminUser, requirePermission } from '../middleware/requireAdminApiKey.js';
 import { notifyStatisticsUpdated } from '../services/notificationService.js';
 import { recordActivity } from '../services/activityService.js';
 import { ensurePlayerForUser, ensurePlayersForExistingUsers, ensureStatsForExistingPlayers } from '../services/playerSyncService.js';
@@ -175,7 +175,7 @@ export async function syncSupabaseAuthUsersToDatabase(client = prisma) {
         name: authPlayer.fullName,
         nickname: authPlayer.nickname,
         email,
-        accountStatus: 'active',
+        accountStatus: existing?.accountStatus || 'active',
         avatarUrl: authPlayer.photo || authPlayer.avatar || null,
         updatedAt: new Date(),
         ...(makeFounder ? { role: 'admin', staffRole: 'Fundador' } : {}),
@@ -219,7 +219,6 @@ export async function syncSupabaseAuthUsersToDatabase(client = prisma) {
 
 playersRouter.get('/api/players', asyncRoute(async (_request, response) => {
   try {
-    await syncSupabaseAuthUsersToDatabase(prisma);
     await ensurePlayersForExistingUsers(prisma);
     await ensureStatsForExistingPlayers(prisma);
 
@@ -335,11 +334,43 @@ playersRouter.put('/api/players/:id/stats', requirePermission('editAnyPerformanc
   response.json({ player: serializePlayer(updated) });
 }));
 
-playersRouter.delete('/api/players/:id', requirePermission('removePlayer'), asyncRoute(async (request, response) => {
-  const existing = await prisma.playerProfile.findUnique({ where: { id: request.params.id } });
-  await prisma.playerProfile.update({
+playersRouter.delete('/api/players/:id', requireAdminUser, asyncRoute(async (request, response) => {
+  const existing = await prisma.playerProfile.findUnique({
     where: { id: request.params.id },
-    data: { status: 'Removido', updatedAt: new Date() },
+    include: { user: true },
+  });
+  if (!existing) {
+    response.status(404).json({ error: 'Jogador nao encontrado.' });
+    return;
+  }
+  if (existing.userId === request.userProfile.id) {
+    response.status(409).json({ error: 'Voce nao pode remover o proprio acesso.' });
+    return;
+  }
+  if (existing.user?.staffRole === 'Fundador') {
+    response.status(403).json({ error: 'O acesso do Fundador nao pode ser removido.' });
+    return;
+  }
+  if (existing.user?.role === 'admin') {
+    const adminCount = await prisma.userProfile.count({ where: { role: 'admin', accountStatus: 'active' } });
+    if (adminCount <= 1) {
+      response.status(409).json({ error: 'Nao e possivel remover o ultimo administrador ativo.' });
+      return;
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.playerProfile.update({
+      where: { id: request.params.id },
+      data: { status: 'Removido', updatedAt: new Date() },
+    });
+
+    if (existing.userId) {
+      await tx.userProfile.update({
+        where: { id: existing.userId },
+        data: { accountStatus: 'removed', updatedAt: new Date() },
+      });
+    }
   });
 
   await prisma.adminAuditLog.create({

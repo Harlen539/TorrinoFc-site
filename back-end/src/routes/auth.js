@@ -31,7 +31,8 @@ function isExistingAuthUserError(message) {
 }
 
 async function createSupabaseAuthUser({ email, password, name, nickname, position, shirt }) {
-  const missing = getMissingSupabaseConfig({ requireServiceRole: true });
+  const missing = getMissingSupabaseConfig();
+  if (!env.supabase.publishableKey) missing.push('SUPABASE_PUBLISHABLE_KEY');
   if (missing.length) {
     throw httpError(503, `Cadastro indisponivel: configure ${missing.join(', ')} no backend.`);
   }
@@ -39,18 +40,17 @@ async function createSupabaseAuthUser({ email, password, name, nickname, positio
   const baseUrl = env.supabase.url.replace(/\/$/, '');
   let response;
   try {
-    response = await fetch(`${baseUrl}/auth/v1/admin/users`, {
+    response = await fetch(`${baseUrl}/auth/v1/signup`, {
       method: 'POST',
       headers: {
-        apikey: env.supabase.secretKey,
-        Authorization: `Bearer ${env.supabase.secretKey}`,
+        apikey: env.supabase.publishableKey,
+        Authorization: `Bearer ${env.supabase.publishableKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         email,
         password,
-        email_confirm: false,
-        user_metadata: { name, nickname, position, shirt },
+        data: { name, nickname, position, shirt },
       }),
     });
   } catch {
@@ -66,11 +66,11 @@ async function createSupabaseAuthUser({ email, password, name, nickname, positio
     throw httpError(response.status >= 500 ? 503 : 400, message);
   }
 
-  return payload;
+  return payload.user || payload;
 }
 
 async function deleteSupabaseAuthUser(userId) {
-  if (!userId) return;
+  if (!userId || !env.supabase.secretKey) return;
   const baseUrl = env.supabase.url.replace(/\/$/, '');
   const rollbackResponse = await fetch(`${baseUrl}/auth/v1/admin/users/${userId}`, {
     method: 'DELETE',

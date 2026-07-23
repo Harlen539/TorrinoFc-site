@@ -22,14 +22,15 @@ export function isNetworkError(error) {
   return error instanceof ApiError && error.status === 0 && error.code === 'NETWORK_ERROR';
 }
 
-async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
+async function request(path, { method = 'GET', body, userEmail = '', retryAuth = true } = {}) {
   const headers = {
     'Content-Type': 'application/json',
   };
+  let token = '';
 
   if (hasSupabaseConfig) {
     const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    token = data.session?.access_token || '';
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -60,6 +61,13 @@ async function request(path, { method = 'GET', body, userEmail = '' } = {}) {
       code: 'NETWORK_ERROR',
       cause: error,
     });
+  }
+
+  if (response.status === 401 && token && retryAuth) {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data.session?.access_token && data.session.access_token !== token) {
+      return request(path, { method, body, userEmail, retryAuth: false });
+    }
   }
 
   if (response.status === 204) return null;

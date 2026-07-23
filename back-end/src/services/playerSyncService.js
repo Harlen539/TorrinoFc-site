@@ -21,6 +21,10 @@ export async function ensurePlayerForUser(tx, profile, payload = {}) {
     orderBy: { createdAt: 'asc' },
   });
 
+  if (existing?.status === 'Removido') {
+    return null;
+  }
+
   const baseData = {
     teamName: 'Torinno FC',
     fullName: sanitizeText(payload.name || payload.fullName || profile.name, { maxLength: 120 }),

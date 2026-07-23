@@ -65,7 +65,7 @@ export function assertBackendConfig() {
 
   if (!env.databaseUrl) missing.push('DATABASE_URL');
   if (!env.supabase.url) missing.push('SUPABASE_URL');
-  if (!env.supabase.secretKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!env.supabase.publishableKey) missing.push('SUPABASE_PUBLISHABLE_KEY');
   if (!env.supabase.jwksUrl) missing.push('SUPABASE_JWKS_URL');
 
   if (missing.length > 0) {

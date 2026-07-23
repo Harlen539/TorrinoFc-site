@@ -28,9 +28,9 @@ function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 }
 
-async function getSupabaseJwks() {
+async function getSupabaseJwks({ forceRefresh = false } = {}) {
   const cacheTtlMs = 10 * 60 * 1000;
-  if (jwksCache.keys && Date.now() - jwksCache.fetchedAt < cacheTtlMs) {
+  if (!forceRefresh && jwksCache.keys && Date.now() - jwksCache.fetchedAt < cacheTtlMs) {
     return jwksCache.keys;
   }
 
@@ -45,17 +45,50 @@ async function getSupabaseJwks() {
   return jwksCache.keys;
 }
 
-async function verifySupabaseJwt(token) {
-  if (!env.supabase.url || !env.supabase.jwksUrl) {
-    throw httpError(503, 'Autenticacao Supabase incompleta no servidor. Configure SUPABASE_URL e SUPABASE_JWKS_URL.');
+async function verifyJwtWithSupabase(token, unverifiedPayload = {}) {
+  const apiKey = env.supabase.publishableKey || env.supabase.secretKey;
+  if (!env.supabase.url || !apiKey) {
+    throw httpError(503, 'Autenticacao Supabase incompleta no servidor.');
   }
+
+  const response = await fetch(`${env.supabase.url.replace(/\/$/, '')}/auth/v1/user`, {
+    headers: {
+      apikey: apiKey,
+      Authorization: `Bearer ${token}`,
+    },
+  }).catch(() => null);
+
+  if (!response?.ok) {
+    throw httpError(401, 'Sessao invalida ou expirada. Entre novamente.');
+  }
+
+  const user = await response.json();
+  if (!user?.id) {
+    throw httpError(401, 'Sessao invalida ou expirada. Entre novamente.');
+  }
+
+  return {
+    ...unverifiedPayload,
+    sub: user.id,
+    email: user.email || unverifiedPayload.email || '',
+  };
+}
+
+async function verifySupabaseJwt(token) {
   const [encodedHeader, encodedPayload, encodedSignature] = token.split('.');
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     throw httpError(401, 'Sessao invalida.');
   }
 
-  const header = parseBase64UrlJson(encodedHeader);
-  const payload = parseBase64UrlJson(encodedPayload);
+  let header;
+  let payload;
+  try {
+    header = parseBase64UrlJson(encodedHeader);
+    payload = parseBase64UrlJson(encodedPayload);
+  } catch {
+    throw httpError(401, 'Sessao invalida.');
+  }
+
   const now = Math.floor(Date.now() / 1000);
 
   if (payload.exp && payload.exp < now) {
@@ -65,28 +98,42 @@ async function verifySupabaseJwt(token) {
     throw httpError(401, 'Sessao ainda nao esta valida.');
   }
 
-  if (!['RS256', 'ES256'].includes(header.alg) || !header.kid) {
-    throw httpError(401, 'Sessao invalida.');
+  if (!env.supabase.jwksUrl || !['RS256', 'ES256'].includes(header.alg) || !header.kid) {
+    return verifyJwtWithSupabase(token, payload);
   }
 
-  const keys = await getSupabaseJwks();
-  const jwk = keys.find((key) => key.kid === header.kid);
+  let keys;
+  try {
+    keys = await getSupabaseJwks();
+  } catch {
+    return verifyJwtWithSupabase(token, payload);
+  }
+
+  let jwk = keys.find((key) => key.kid === header.kid);
   if (!jwk) {
-    throw httpError(401, 'Chave de sessao desconhecida.');
+    keys = await getSupabaseJwks({ forceRefresh: true }).catch(() => []);
+    jwk = keys.find((key) => key.kid === header.kid);
+  }
+  if (!jwk) {
+    return verifyJwtWithSupabase(token, payload);
   }
 
-  const verifier = createVerify('SHA256');
-  verifier.update(`${encodedHeader}.${encodedPayload}`);
-  verifier.end();
+  let isValid = false;
+  try {
+    const verifier = createVerify('SHA256');
+    verifier.update(`${encodedHeader}.${encodedPayload}`);
+    verifier.end();
 
-  const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
-  const signature = Buffer.from(encodedSignature, 'base64url');
-  const isValid = header.alg === 'ES256'
-    ? verifier.verify({ key: publicKey, dsaEncoding: 'ieee-p1363' }, signature)
-    : verifier.verify(publicKey, signature);
-
+    const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
+    const signature = Buffer.from(encodedSignature, 'base64url');
+    isValid = header.alg === 'ES256'
+      ? verifier.verify({ key: publicKey, dsaEncoding: 'ieee-p1363' }, signature)
+      : verifier.verify(publicKey, signature);
+  } catch {
+    return verifyJwtWithSupabase(token, payload);
+  }
   if (!isValid) {
-    throw httpError(401, 'Assinatura da sessao invalida.');
+    return verifyJwtWithSupabase(token, payload);
   }
 
   if (env.supabase.url) {
